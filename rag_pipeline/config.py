@@ -93,6 +93,25 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class PdfProcessingConfig:
+    extract_text: bool = True
+    extract_tables: bool = False
+    extract_images: bool = False
+    ocr_language: str = "vie+eng"
+    table_format: str = "markdown"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PdfProcessingConfig":
+        return cls(
+            extract_text=data.get("extract_text", True),
+            extract_tables=data.get("extract_tables", False),
+            extract_images=data.get("extract_images", False),
+            ocr_language=data.get("ocr_language", "vie+eng"),
+            table_format=data.get("table_format", "markdown"),
+        )
+
+
+@dataclass(frozen=True)
 class AppConfig:
     data: DataConfig
     chunking: ChunkingConfig
@@ -100,6 +119,7 @@ class AppConfig:
     vector_store: VectorStoreConfig
     pipeline: PipelineRuntimeConfig
     logging: LoggingConfig
+    pdf_processing: PdfProcessingConfig = field(default_factory=PdfProcessingConfig)
 
     @classmethod
     def load(cls, path: Path) -> "AppConfig":
@@ -113,6 +133,7 @@ class AppConfig:
             vector_store=VectorStoreConfig.from_dict(raw_config.get("vector_store", {})),
             pipeline=PipelineRuntimeConfig.from_dict(raw_config.get("pipeline", {})),
             logging=LoggingConfig.from_dict(raw_config.get("logging", {})),
+            pdf_processing=PdfProcessingConfig.from_dict(raw_config.get("pdf_processing", {})),
         )
 
 

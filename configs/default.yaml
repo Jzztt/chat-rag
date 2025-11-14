@@ -26,3 +26,9 @@ pipeline:
 logging:
   level: INFO
   log_file: logs/ingest.log
+pdf_processing:
+  extract_text: true
+  extract_tables: false
+  extract_images: false
+  ocr_language: "vie+eng"
+  table_format: "markdown"

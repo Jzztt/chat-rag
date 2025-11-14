@@ -10,6 +10,7 @@ from langchain_core.documents import Document
 
 from .config import AppConfig, ensure_directories
 from .document_loader import DocumentLoaderStrategy, PdfDirectoryLoader
+from .pdf_processor import PdfProcessorConfig
 from .chunking import Chunker
 from .embedding import EmbeddingStrategy
 from .vector_store import VectorStoreManager
@@ -74,7 +75,15 @@ class OfflineIndexPipeline:
 
 
 def build_pipeline(config: AppConfig) -> OfflineIndexPipeline:
-    loader = PdfDirectoryLoader(config.data)
+    # Chuyển đổi PdfProcessingConfig từ config sang PdfProcessorConfig cho loader
+    pdf_proc_config = PdfProcessorConfig(
+        extract_text=config.pdf_processing.extract_text,
+        extract_tables=config.pdf_processing.extract_tables,
+        extract_images=config.pdf_processing.extract_images,
+        ocr_language=config.pdf_processing.ocr_language,
+        table_format=config.pdf_processing.table_format,
+    )
+    loader = PdfDirectoryLoader(config.data, pdf_processing_config=pdf_proc_config)
     chunker = Chunker(config.chunking)
     embedder = EmbeddingStrategy(config.embedding)
     vector_store = VectorStoreManager(config.vector_store, embedder)
