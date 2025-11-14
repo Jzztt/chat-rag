@@ -1,104 +1,98 @@
-import os
+import sys
 from pathlib import Path
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.llms import Ollama
 from langchain_ollama import OllamaLLM
-from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
-
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
 
 OLLAMA_MODEL = "llama3.2:3b"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-CHROMA_DB_PATH = "./chroma_db"
-DATA_DIR = "data/pdfs"
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 50
-TOP_K = 3
+EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
+CHROMA_DB_PATH = Path("chroma_db")
+COLLECTION_NAME = "rag_documents"
+TOP_K = 10
 
 
-print("🚀 Initializing Ollama RAG System...")
+def load_vector_store():
+    if not CHROMA_DB_PATH.exists():
+        print(f"[ERROR] Không tìm thấy thư mục vector store tại {CHROMA_DB_PATH}.")
+        print("Hãy chạy `python ingest.py` để xây dựng dữ liệu trước khi truy vấn.")
+        sys.exit(1)
 
-print(f"📊 Loading embedding model: {EMBEDDING_MODEL}")
-embeddings = HuggingFaceEmbeddings(
-    model_name=EMBEDDING_MODEL,
-    model_kwargs={"device": "cpu"}   # đổi "cuda" nếu có GPU
-)
+    print(f"[INFO] Loading embedding model: {EMBEDDING_MODEL}")
+    embeddings = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={"device": "cpu"}  # đổi "cuda" nếu có GPU
+    )
 
-print(f"🤖 Connecting to Ollama model: {OLLAMA_MODEL}")
-llm = OllamaLLM(model=OLLAMA_MODEL, temperature=0.7)
+    print(f"[INFO] Opening ChromaDB collection '{COLLECTION_NAME}' tại {CHROMA_DB_PATH.resolve()}")
+    vectorstore = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+        persist_directory=str(CHROMA_DB_PATH),
+    )
 
-
-Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
-
-loader = DirectoryLoader(
-    path=DATA_DIR,
-    glob="*.pdf",
-    loader_cls=PyPDFLoader
-)
-documents = loader.load()
-print(f"✅ Loaded {len(documents)} documents (mỗi trang PDF ≈ 1 Document).")
-
-print(f"✂️  Splitting (chunk_size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP})...")
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=CHUNK_SIZE,
-    chunk_overlap=CHUNK_OVERLAP,
-    length_function=len,
-)
-chunks = splitter.split_documents(documents)
-print(f"✅ Created {len(chunks)} chunks")
+    try:
+        collection_count = vectorstore._collection.count()  # type: ignore[attr-defined]
+    except Exception:
+        collection_count = "unknown"
+    print(f"[INFO] Loaded vector store với {collection_count} entries.")
+    return vectorstore
 
 
-print("\n💾 Creating vector store with ChromaDB...")
-vectorstore = Chroma.from_documents(
-    documents=chunks,
-    embedding=embeddings,
-    persist_directory=CHROMA_DB_PATH
-)
-print("✅ Vector store created and persisted")
+def build_rag_chain():
+    print("[INFO] Initializing Ollama RAG System...")
+    vectorstore = load_vector_store()
 
-retriever = vectorstore.as_retriever(
-    search_type="mmr",
-    search_kwargs={"k": TOP_K, "fetch_k": max(12, TOP_K * 4)}
-)
+    print(f"[INFO] Connecting to Ollama model: {OLLAMA_MODEL}")
+    llm = OllamaLLM(model=OLLAMA_MODEL, temperature=0.7, streaming=True)
 
+    retriever = vectorstore.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": TOP_K, "fetch_k": max(12, TOP_K * 4)},
+    )
 
-def format_docs(docs):
-    return "\n\n---\n\n".join(d.page_content for d in docs)
+    def format_docs(docs):
+        return "\n\n---\n\n".join(d.page_content for d in docs)
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system",
-     "Bạn là trợ lý RAG. Trả lời ngắn gọn, dựa trên ngữ cảnh. "
-     "Nếu không đủ thông tin trong ngữ cảnh, hãy nói bạn không biết.\n\n"
-     "{context}"),
-    ("human", "{question}")
-])
+    prompt = ChatPromptTemplate.from_messages([
+        ("system",
+         "Bạn là trợ lý RAG. Trả lời ngắn gọn, dựa trên ngữ cảnh. "
+         "Nếu không đủ thông tin trong ngữ cảnh, hãy nói bạn không biết.\n\n"
+         "{context}"),
+        ("human", "{question}")
+    ])
 
-rag_chain = (
-    {
-        "context": retriever | format_docs,
-        "question": RunnablePassthrough()
-    }
-    | prompt
-    | llm
-    | StrOutputParser()
-)
-print("✅ RAG chain ready!")
+    rag_chain = (
+        {
+            "context": retriever | format_docs,
+            "question": RunnablePassthrough()
+        }
+        | prompt
+        | llm
+    )
+    print("[INFO] RAG chain ready!")
+    return rag_chain, retriever
+def ask_question(rag_chain, retriever, question: str):
+    print(f"\n{'='*60}\n[QUESTION] {question}\n{'='*60}")
+    print("\n[ANSWER]\n", end="", flush=True)
 
+    streamed_answer_parts = []
+    try:
+        for chunk in rag_chain.stream(question):
+            streamed_answer_parts.append(chunk)
+            print(chunk, end="", flush=True)
+    except Exception as error:
+        print(f"\n[ERROR] Streaming failed: {error}")
+        return ""
 
-def ask_question(question: str):
-    print(f"\n{'='*60}\n❓ Question: {question}\n{'='*60}")
-    answer = rag_chain.invoke(question)
-    print(f"\n🤖 Answer:\n{answer}")
+    answer = "".join(streamed_answer_parts).strip()
+    print()  # newline kết thúc phần trả lời
 
-    # Lấy nguồn (documents) riêng để in citation
     docs = retriever.invoke(question)
-    print("\n📄 Sources:")
+    print("\n[SOURCES]")
     for i, d in enumerate(docs, 1):
         src = d.metadata.get("source", "unknown")
         page = d.metadata.get("page", "?")
@@ -109,35 +103,25 @@ def ask_question(question: str):
 
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("🎉 RAG System Ready! Testing with sample queries...")
-    print("="*60)
-
-    sample_queries = [
-        "What is Python and who created it?",
-        "Explain what RAG is and how it works",
-        "What libraries are used for machine learning in Python?",
-    ]
-    for q in sample_queries:
-        ask_question(q)
+    rag_chain, retriever = build_rag_chain()
 
     print("\n" + "="*60)
-    print("💬 Interactive Mode - Ask your questions! (exit/quit/q to stop)")
+    print("[INFO] Interactive Mode - Ask your questions! (exit/quit/q to stop)")
     print("="*60)
 
     while True:
         try:
-            user_q = input("\n🗣️  Your question: ").strip()
+            user_q = input("\nYour question: ").strip()
             if user_q.lower() in {"exit", "quit", "q"}:
-                print("\n👋 Goodbye!")
+                print("\nGoodbye!")
                 break
             if not user_q:
-                print("⚠️  Please enter a question")
+                print("Please enter a question")
                 continue
-            ask_question(user_q)
+            ask_question(rag_chain, retriever, user_q)
         except KeyboardInterrupt:
-            print("\n\n👋 Goodbye!")
+            print("\n\nGoodbye!")
             break
         except Exception as e:
-            print(f"\n❌ Error: {e}")
-            print("💡 Make sure Ollama is running: ollama serve")
+            print(f"\nError: {e}")
+            print("Tip: Make sure Ollama is running: ollama serve")
