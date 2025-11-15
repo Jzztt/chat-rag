@@ -5,7 +5,11 @@ import type {
   Source, 
   Conversation, 
   Project,
-  UploadResponse 
+  UploadResponse,
+  SourceStats,
+  FileDetails,
+  SearchInFileRequest,
+  SearchInFileResponse
 } from '@/types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -17,10 +21,91 @@ const api = axios.create({
   },
 })
 
-// Chat API
+// Chat API - Streaming only
 export const chatApi = {
-  sendMessage: async (data: ChatRequest): Promise<ChatResponse> => {
-    const response = await api.post<ChatResponse>('/chat', data)
+  sendMessage: async (
+    data: ChatRequest,
+    onChunk: (chunk: string) => void,
+    onDone: (response: ChatResponse) => void,
+    onError: (error: string) => void
+  ): Promise<void> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      
+      if (!reader) {
+        throw new Error('No response body')
+      }
+
+      let buffer = ''
+      
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) break
+        
+        buffer += decoder.decode(value, { stream: true })
+        
+        // Process complete SSE messages
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep incomplete line in buffer
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const jsonData = JSON.parse(line.slice(6))
+              
+              if (jsonData.type === 'chunk') {
+                onChunk(jsonData.content || '')
+              } else if (jsonData.type === 'done') {
+                onDone({
+                  answer: jsonData.answer || '',
+                  sources: jsonData.sources || [],
+                  conversation_id: jsonData.conversation_id || '',
+                  confidence: jsonData.confidence || 'medium',
+                  eval_scores: jsonData.eval_scores || {},
+                  used_rag: jsonData.used_rag !== undefined ? jsonData.used_rag : true,
+                  hops: jsonData.hops || 1
+                })
+                return
+              } else if (jsonData.type === 'error') {
+                onError(jsonData.error || 'Unknown error')
+                return
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e)
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      onError(error.message || 'Failed to stream response')
+    }
+  },
+
+  getConversations: async (projectId?: string): Promise<Conversation[]> => {
+    const params = projectId ? `?project_id=${projectId}` : ''
+    const response = await api.get<{ conversations: Conversation[] }>(`/conversations${params}`)
+    return response.data.conversations
+  },
+
+  createConversation: async (projectId: string, title?: string): Promise<Conversation> => {
+    const response = await api.post<Conversation>('/conversations', {
+      project_id: projectId,
+      title: title || 'New Conversation'
+    })
     return response.data
   },
 
@@ -28,17 +113,30 @@ export const chatApi = {
     const response = await api.get<Conversation>(`/conversations/${conversationId}`)
     return response.data
   },
+
+  updateConversation: async (conversationId: string, title: string): Promise<Conversation> => {
+    const response = await api.patch<Conversation>(`/conversations/${conversationId}`, { title })
+    return response.data
+  },
+
+  deleteConversation: async (conversationId: string): Promise<void> => {
+    await api.delete(`/conversations/${conversationId}`)
+  },
 }
 
 // File Management API
 export const fileApi = {
-  uploadFiles: async (files: File[]): Promise<UploadResponse> => {
+  uploadFiles: async (files: File[], projectId: string, conversationId?: string): Promise<UploadResponse> => {
     const formData = new FormData()
     files.forEach(file => {
       formData.append('files', file)
     })
     
-    const response = await api.post<UploadResponse>('/upload', formData, {
+    const params = conversationId 
+      ? `?project_id=${projectId}&conversation_id=${conversationId}`
+      : `?project_id=${projectId}`
+    
+    const response = await api.post<UploadResponse>(`/upload${params}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -46,13 +144,48 @@ export const fileApi = {
     return response.data
   },
 
-  getSources: async (): Promise<Source[]> => {
-    const response = await api.get<{ sources: Source[] }>('/sources')
+  getSources: async (projectId: string, conversationId?: string): Promise<Source[]> => {
+    const params = conversationId
+      ? `?project_id=${projectId}&conversation_id=${conversationId}`
+      : `?project_id=${projectId}`
+    const response = await api.get<{ sources: Source[] }>(`/sources${params}`)
     return response.data.sources
   },
 
-  deleteSource: async (sourceId: string): Promise<void> => {
-    await api.delete(`/sources/${sourceId}`)
+  getSourceStats: async (projectId: string): Promise<SourceStats> => {
+    const response = await api.get<SourceStats>(`/sources/stats?project_id=${projectId}`)
+    return response.data
+  },
+
+  getSourceDetails: async (sourceId: string, projectId: string): Promise<FileDetails> => {
+    const response = await api.get<FileDetails>(`/sources/${sourceId}?project_id=${projectId}`)
+    return response.data
+  },
+
+  searchInFile: async (
+    sourceId: string,
+    projectId: string,
+    request: SearchInFileRequest
+  ): Promise<SearchInFileResponse> => {
+    const response = await api.post<SearchInFileResponse>(
+      `/sources/${sourceId}/search?project_id=${projectId}`,
+      request
+    )
+    return response.data
+  },
+
+  rebuildIndex: async (projectId: string, force: boolean = false): Promise<{ message: string; stats: SourceStats }> => {
+    const response = await api.post<{ message: string; stats: SourceStats }>(
+      `/sources/rebuild?project_id=${projectId}&force=${force}`
+    )
+    return response.data
+  },
+
+  deleteSource: async (sourceId: string, projectId: string, conversationId?: string): Promise<void> => {
+    const params = conversationId
+      ? `?project_id=${projectId}&conversation_id=${conversationId}`
+      : `?project_id=${projectId}`
+    await api.delete(`/sources/${sourceId}${params}`)
   },
 }
 

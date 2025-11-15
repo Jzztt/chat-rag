@@ -1,17 +1,21 @@
 import { useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { fileApi } from '@/services/api'
-import type { Source } from '@/types'
 
 /**
  * Custom Hook for File Upload
  * Design Pattern: Custom Hook Pattern
+ * Files are attached to current conversation (like NotebookLM)
  */
 export function useFileUpload() {
   const [isUploading, setIsUploading] = useState(false)
-  const { addSource } = useAppStore()
+  const { currentProject, activeConversationId } = useAppStore()
 
-  const handleFileUpload = async (files: File[]) => {
+  const handleFileUpload = async (files: File[]): Promise<void> => {
+    if (!currentProject) {
+      throw new Error('No project selected')
+    }
+
     setIsUploading(true)
     try {
       // Validate file size (50MB max)
@@ -25,29 +29,18 @@ export function useFileUpload() {
       })
 
       if (validFiles.length === 0) {
-        console.error('No valid files to upload')
-        return
+        throw new Error('No valid files to upload')
       }
 
-      // Upload files
-      const response = await fileApi.uploadFiles(validFiles)
-      
-      // TODO: Fetch actual source data from API
-      // For now, create mock sources
-      validFiles.forEach((file, index) => {
-        const mockSource: Source = {
-          id: response.file_ids[index] || `file-${Date.now()}-${index}`,
-          filename: file.name,
-          filepath: file.name,
-          file_type: file.type || 'application/pdf',
-          file_size: file.size,
-          indexed_at: new Date().toISOString(),
-          chunk_count: 0,
-        }
-        addSource(mockSource)
-      })
+      // Upload files and attach to current conversation (like NotebookLM)
+      await fileApi.uploadFiles(
+        validFiles, 
+        currentProject.id,
+        activeConversationId || undefined
+      )
     } catch (error) {
       console.error('File upload failed:', error)
+      throw error
     } finally {
       setIsUploading(false)
     }

@@ -26,37 +26,16 @@ interface AppState {
   setSidebarOpen: (open: boolean) => void
 }
 
-// Mock data for development
-const mockProjects: Project[] = [
-  {
-    id: '1',
-    name: 'GenAI Team',
-    description: 'Gen-related docs',
-    created_at: new Date().toISOString(),
-    chroma_db_path: './chroma_db',
-  },
-]
-
-const mockConversations: Conversation[] = [
-  {
-    id: '6235',
-    project_id: '1',
-    title: 'Chat #6235',
-    messages: [],
-    created_at: new Date().toISOString(),
-  },
-]
-
 export const useAppStore = create<AppState>((set) => ({
   // Projects
-  currentProject: mockProjects[0] || null,
-  projects: mockProjects,
+  currentProject: null,
+  projects: [],
   setCurrentProject: (project) => set({ currentProject: project }),
   setProjects: (projects) => set({ projects }),
 
   // Conversations
-  conversations: mockConversations,
-  activeConversationId: mockConversations[0]?.id || null,
+  conversations: [],
+  activeConversationId: null,
   setConversations: (conversations) => set({ conversations }),
   setActiveConversationId: (id) => set({ activeConversationId: id }),
   addConversation: (conversation) =>
