@@ -221,6 +221,9 @@ Trả lời:"""
         max_hops: int = 2
     ):
         """Ask a question with streaming response - Enhanced with LLM Decision & Multi-hop Reasoning"""
+        import time
+        rag_start_time = time.time()
+        
         try:
             rag = self.get_rag_system(project_id, chroma_db_path)
             
@@ -229,9 +232,11 @@ Trả lời:"""
                 raise ValueError("RAG system not setup. Call setup() first.")
             
             # ===== STEP 1: LLM Decision Layer =====
+            decision_start = time.time()
             use_rag = True
             if enable_llm_decision:
                 use_rag = self._needs_rag_decision(rag, question)
+            decision_time = (time.time() - decision_start) * 1000  # ms
             
             if not use_rag:
                 # Direct answer without RAG
@@ -258,12 +263,15 @@ Trả lời:"""
                 return
             
             # ===== STEP 2: Multi-hop RAG Flow =====
+            retrieval_start = time.time()
             all_docs = []
             all_context = ""
             hop_count = 0
             query_emb = None
+            retrieval_times = []
             
             while hop_count < max_hops:
+                hop_start = time.time()
                 hop_count += 1
                 print(f"🔄 RAG Hop {hop_count}/{max_hops}")
                 
@@ -299,6 +307,9 @@ Trả lời:"""
                 all_context = context
                 
                 # Check if more search is needed (feedback loop)
+                hop_time = (time.time() - hop_start) * 1000  # ms
+                retrieval_times.append(hop_time)
+                
                 if enable_multi_hop and hop_count < max_hops:
                     needs_more = self._needs_more_search(rag, question, context, all_docs)
                     if not needs_more:
@@ -307,6 +318,8 @@ Trả lời:"""
                     print(f"🔍 Need more search, continuing to hop {hop_count + 1}")
                 else:
                     break
+            
+            retrieval_time = (time.time() - retrieval_start) * 1000  # ms
             
             docs = all_docs
             

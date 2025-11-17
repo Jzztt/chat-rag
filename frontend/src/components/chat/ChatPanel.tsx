@@ -94,6 +94,7 @@ export function ChatPanel() {
                     timestamp: new Date().toISOString(),
                     used_rag: lastResponse?.used_rag,
                     hops: lastResponse?.hops,
+                    timing: lastResponse?.timing,
                   }} 
                 />
               )}

@@ -55,6 +55,7 @@ export function useChat(projectId: string | null, conversationId: string | null)
             if (lastMessage.role === 'assistant') {
               lastMessage.used_rag = response.used_rag
               lastMessage.hops = response.hops
+              lastMessage.timing = response.timing
             }
           }
           

@@ -21,6 +21,12 @@ export interface ChatResponse {
   }
   used_rag?: boolean  // Whether RAG was used
   hops?: number  // Number of search hops performed
+  timing?: {
+    total_ms: number  // Total time in milliseconds
+    rag_ms: number  // RAG processing time
+    streaming_ms: number  // Streaming time
+    total_s: number  // Total time in seconds
+  }
 }
 
 export interface Source {
@@ -96,6 +102,12 @@ export interface Message {
   timestamp: string
   used_rag?: boolean  // Whether RAG was used for this message
   hops?: number  // Number of search hops performed
+  timing?: {
+    total_ms: number
+    rag_ms: number
+    streaming_ms: number
+    total_s: number
+  }
 }
 
 export interface Project {

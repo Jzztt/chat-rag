@@ -1,6 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card'
 import type { Message } from '@/types'
-import { User, Bot, Database, RefreshCw } from 'lucide-react'
+import { User, Bot, Database, RefreshCw, Clock } from 'lucide-react'
 
 interface MessageBubbleProps {
   message: Message
@@ -34,15 +34,15 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         
         {/* Sources and Debug Info */}
         <div className="flex items-center gap-2 mt-1 px-1 flex-wrap">
-          {message.sources && message.sources.length > 0 && (
+        {message.sources && message.sources.length > 0 && (
             <div className="text-xs text-muted-foreground">
               {message.sources.length} source{message.sources.length > 1 ? 's' : ''}
             </div>
           )}
           
           {/* Debug Info - Only show for assistant messages */}
-          {!isUser && (message.used_rag !== undefined || message.hops !== undefined) && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {!isUser && (message.used_rag !== undefined || message.hops !== undefined || message.timing) && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
               {message.used_rag !== undefined && (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50" title={message.used_rag ? 'Used RAG (Retrieval Augmented Generation)' : 'Direct answer (no RAG)'}>
                   <Database className="h-3 w-3" />
@@ -55,8 +55,18 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   <span className="hidden sm:inline">{message.hops}x</span>
                 </div>
               )}
-            </div>
-          )}
+              {message.timing && (
+                <div 
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50" 
+                  title={`Timing: Total ${message.timing.total_s}s (RAG: ${message.timing.rag_ms}ms, Streaming: ${message.timing.streaming_ms}ms)`}
+                >
+                  <Clock className="h-3 w-3" />
+                  <span className="hidden sm:inline">{message.timing.total_ms}ms</span>
+                  <span className="sm:hidden">{Math.round(message.timing.total_ms)}ms</span>
+                </div>
+              )}
+          </div>
+        )}
         </div>
       </div>
     </div>

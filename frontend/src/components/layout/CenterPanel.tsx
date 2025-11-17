@@ -87,24 +87,24 @@ export function CenterPanel({ children, mobile = false, onToggleRightSidebar }: 
                   No conversations yet
                 </div>
               ) : (
-            conversations.map((conversation) => (
+                conversations.map((conversation) => (
               <div
                 key={conversation.id}
                 className="group relative"
               >
-                <button
+                  <button
                   onClick={(e) => handleConversationClick(conversation.id, e)}
-                  className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                    activeConversationId === conversation.id
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-accent/50 text-foreground'
-                  }`}
-                >
+                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
+                      activeConversationId === conversation.id
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent/50 text-foreground'
+                    }`}
+                  >
                   <MessageSquare className="h-4 w-4 flex-shrink-0" />
                   <span className="truncate flex-1">
-                    {conversation.title || `Chat #${conversation.id.slice(-4)}`}
-                  </span>
-                </button>
+                      {conversation.title || `Chat #${conversation.id.slice(-4)}`}
+                    </span>
+                  </button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -115,7 +115,7 @@ export function CenterPanel({ children, mobile = false, onToggleRightSidebar }: 
                   <Trash2 className="h-3.5 w-3.5 text-destructive" />
                 </Button>
               </div>
-            ))
+                ))
               )}
             </div>
           </ScrollArea>

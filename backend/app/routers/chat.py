@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 import json
+import time
 from app.core.database import get_db
 from app.models.conversation import Conversation, Message
 from app.models.project import Project
@@ -85,6 +86,13 @@ async def send_message_stream(
     
     async def generate_stream():
         """Generator function for streaming response"""
+        # Start timing
+        request_start_time = time.time()
+        rag_start_time = None
+        rag_end_time = None
+        streaming_start_time = None
+        streaming_end_time = None
+        
         # Create a new database session for this generator
         from app.core.database import SessionLocal
         db_session = SessionLocal()
@@ -96,6 +104,7 @@ async def send_message_stream(
         
         try:
             # Stream RAG response with enhanced features
+            rag_start_time = time.time()
             for chunk_data in rag_service.ask_question_stream(
                 project_id=request.project_id,
                 chroma_db_path=chroma_db_path,
@@ -109,6 +118,12 @@ async def send_message_stream(
                     # Stream text chunk
                     chunk_text = chunk_data.get("content", "")
                     full_answer += chunk_text
+                    
+                    # Mark streaming start time on first chunk
+                    if streaming_start_time is None:
+                        streaming_start_time = time.time()
+                        rag_end_time = time.time()  # RAG processing ends when streaming starts
+                    
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk_text})}\n\n"
                 
                 elif chunk_data.get("type") == "done":
@@ -118,11 +133,32 @@ async def send_message_stream(
                     confidence = chunk_data.get("confidence", "medium")
                     eval_scores = chunk_data.get("eval_scores", {})
                     
+                    # Calculate timing
+                    streaming_end_time = time.time()
+                    if rag_end_time is None:
+                        rag_end_time = streaming_end_time
+                    if streaming_start_time is None:
+                        streaming_start_time = rag_end_time
+                    
+                    # Calculate timing metrics
+                    total_time = streaming_end_time - request_start_time
+                    rag_time = rag_end_time - rag_start_time if rag_start_time else 0
+                    streaming_time = streaming_end_time - streaming_start_time if streaming_start_time else 0
+                    db_time = 0  # Database operations are fast, can be calculated if needed
+                    
+                    timing_info = {
+                        "total_ms": round(total_time * 1000, 2),
+                        "rag_ms": round(rag_time * 1000, 2),
+                        "streaming_ms": round(streaming_time * 1000, 2),
+                        "total_s": round(total_time, 2)
+                    }
+                    
                     # Save assistant message to database using new session
                     # Include debug metadata in sources
                     message_metadata = {
                         "used_rag": chunk_data.get("used_rag", True),
-                        "hops": chunk_data.get("hops", 1)
+                        "hops": chunk_data.get("hops", 1),
+                        "timing": timing_info
                     }
                     # Add metadata to sources if sources exist, otherwise create metadata-only source
                     sources_with_metadata = sources.copy() if sources else []
@@ -167,7 +203,7 @@ async def send_message_stream(
                     
                     db_session.commit()
                     
-                    # Send final response with enhanced metadata
+                    # Send final response with enhanced metadata (timing already calculated above)
                     yield f"data: {json.dumps({
                         'type': 'done',
                         'answer': full_answer,
@@ -176,7 +212,8 @@ async def send_message_stream(
                         'confidence': confidence,
                         'eval_scores': eval_scores,
                         'used_rag': chunk_data.get('used_rag', True),
-                        'hops': chunk_data.get('hops', 1)
+                        'hops': chunk_data.get('hops', 1),
+                        'timing': timing_info
                     })}\n\n"
                 
                 elif chunk_data.get("type") == "error":

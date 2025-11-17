@@ -202,15 +202,15 @@ export function LeftSidebar({ mobile = false, open, onOpenChange }: LeftSidebarP
                 >
                   <button
                     onClick={(e) => handleProjectClick(project.id, e)}
-                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                      currentProject?.id === project.id
-                        ? 'bg-accent text-accent-foreground'
-                        : 'hover:bg-accent/50 text-foreground'
-                    }`}
-                  >
+                  className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
+                    currentProject?.id === project.id
+                      ? 'bg-accent text-accent-foreground'
+                      : 'hover:bg-accent/50 text-foreground'
+                  }`}
+                >
                     <FolderKanban className="h-4 w-4 flex-shrink-0" />
                     <span className="truncate flex-1">{project.name}</span>
-                  </button>
+                </button>
                   <Button
                     variant="ghost"
                     size="icon"
