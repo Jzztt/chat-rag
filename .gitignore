@@ -74,11 +74,26 @@ Desktop.ini
 
 # Data files (uncomment if you want to ignore PDFs)
 data/
-
+downloads/
 # Temporary files
 *.tmp
 *.temp
 *.bak
 
+# Node.js (should not be in backend)
+backend/node_modules/
+backend/package.json
+backend/package-lock.json
+backend/frontend/
 
+# File indexes (temporary files)
+file_index_*.json
+
+# Test/Reference scripts (optional - uncomment if you want to ignore)
+# gemini-file-search.py
+# ollama_rag_test.py
+# rag_pipeline/
+
+# Misc files
+e
 
