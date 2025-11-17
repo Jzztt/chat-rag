@@ -54,7 +54,6 @@ chroma_db/
 
 # Model cache (HuggingFace)
 .cache/
-models/
 *.bin
 *.safetensors
 
