@@ -51,6 +51,10 @@ chroma_db/
 .env
 .env.local
 .env.*.local
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
 
 # Model cache (HuggingFace)
 .cache/
@@ -73,11 +77,11 @@ Desktop.ini
 
 # Data files (uncomment if you want to ignore PDFs)
 data/
-downloads/
 # Temporary files
 *.tmp
 *.temp
 *.bak
+*.orig
 
 # Node.js (should not be in backend)
 backend/node_modules/
@@ -87,7 +91,26 @@ backend/frontend/
 
 # File indexes (temporary files)
 file_index_*.json
+*.jsonl
 
+# Secrets / Certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+secrets/
+credentials/
+certs/
+.ssh/
+
+# Uploads / user data
+data/uploads/
+data/pdfs/
+backend/data/
+frontend/.cache/
+frontend/node_modules/
 # Test/Reference scripts (optional - uncomment if you want to ignore)
 # gemini-file-search.py
 # ollama_rag_test.py
