@@ -30,7 +30,7 @@ RAGConfig = rag_module.RAGConfig
 
 
 class RAGService:
-    """Service for managing RAG operations per project"""
+    """Service for managing RAG operations per workspace (global knowledge base)."""
     
     _instances: Dict[str, RAGSystem] = {}
     
@@ -38,12 +38,12 @@ class RAGService:
         """Initialize RAG service"""
         pass
     
-    def get_rag_system(self, project_id: str, chroma_db_path: str) -> RAGSystem:
-        """Get or create RAG system for a project"""
-        if project_id not in self._instances:
+    def get_rag_system(self, workspace_id: str, chroma_db_path: str) -> RAGSystem:
+        """Get or create the RAG system for a workspace."""
+        if workspace_id not in self._instances:
             config = RAGConfig(
                 chroma_db_path=str(chroma_db_path),
-                file_index_path=f"./file_index_{project_id}.json",
+                file_index_path=f"./file_index_{workspace_id}.json",
                 data_dir=str(Path(chroma_db_path).parent / "pdfs"),
                 ollama_model="llama3.2:3b",
                 embedding_model="sentence-transformers/all-MiniLM-L6-v2",
@@ -58,25 +58,25 @@ class RAGService:
                 enable_query_expansion=True,
                 similarity_threshold=0.3,
                 use_parent_child_chunking=True,
-                log_file=f"logs/rag_queries_{project_id}.jsonl"
+                log_file=f"logs/rag_queries_{workspace_id}.jsonl"
             )
             
             rag = RAGSystem(config)
             rag.setup(force_rebuild=False)
-            self._instances[project_id] = rag
+            self._instances[workspace_id] = rag
         
-        return self._instances[project_id]
+        return self._instances[workspace_id]
     
     def ask_question(
         self,
-        project_id: str,
+        workspace_id: str,
         chroma_db_path: str,
         question: str,
         show_sources: bool = True
     ) -> Dict[str, Any]:
         """Ask a question using RAG system (similar to ask() in gemini-file-search.py)"""
         try:
-            rag = self.get_rag_system(project_id, chroma_db_path)
+            rag = self.get_rag_system(workspace_id, chroma_db_path)
             result = rag.ask(question, show_sources=show_sources)
             
             # Format sources for API response (similar to gemini-file-search.py format)
@@ -105,7 +105,7 @@ class RAGService:
         except Exception as e:
             # Enhanced error handling
             error_msg = str(e)
-            print(f"Error in ask_question for project {project_id}: {error_msg}")
+            print(f"Error in ask_question for workspace {workspace_id}: {error_msg}")
             
             # Return error response
             return {
@@ -212,20 +212,29 @@ Trả lời:"""
     
     def ask_question_stream(
         self,
-        project_id: str,
+        workspace_id: str,
         chroma_db_path: str,
         question: str,
         show_sources: bool = True,
         enable_llm_decision: bool = True,
         enable_multi_hop: bool = True,
-        max_hops: int = 2
+        max_hops: Optional[int] = None
     ):
         """Ask a question with streaming response - Enhanced with LLM Decision & Multi-hop Reasoning"""
         import time
+        from app.core.config import settings
+        
         rag_start_time = time.time()
         
+        # Use optimized default max_hops for faster responses
+        if max_hops is None:
+            if settings.REDUCE_MULTI_HOP_BY_DEFAULT:
+                max_hops = settings.DEFAULT_MAX_HOPS
+            else:
+                max_hops = 2
+        
         try:
-            rag = self.get_rag_system(project_id, chroma_db_path)
+            rag = self.get_rag_system(workspace_id, chroma_db_path)
             
             # Check if RAG system is ready
             if not rag.retriever or not rag.prompt_template or not rag.format_func:
@@ -293,9 +302,11 @@ Trả lời:"""
                 new_docs = [doc for doc in hop_docs if doc.page_content[:100] not in seen_contents]
                 all_docs.extend(new_docs)
                 
-                # Re-rank if enabled
+                # Re-rank if enabled (optimized: limit docs to re-rank)
                 if rag.config.use_reranker and all_docs and hasattr(rag, 'reranker') and rag.reranker:
-                    docs_to_rerank = all_docs[:15] if len(all_docs) > 15 else all_docs
+                    from app.core.config import settings
+                    max_rerank = getattr(settings, 'MAX_RE_RANK_DOCS', 15)
+                    docs_to_rerank = all_docs[:max_rerank] if len(all_docs) > max_rerank else all_docs
                     reranked = rag.reranker.rerank(question, docs_to_rerank, top_k=rag.config.top_k)
                     reranked_ids = {id(d) for d in reranked}
                     all_docs = reranked + [d for d in all_docs if id(d) not in reranked_ids][:rag.config.top_k]
@@ -324,20 +335,45 @@ Trả lời:"""
             docs = all_docs
             
             # 3. Quick similarity check (skip full evaluation for speed)
-            # Compute query embedding once and reuse it
+            # Compute query embedding once and reuse it with caching
             eval_scores = {}
             query_emb = None
             if docs:
                 try:
                     from sentence_transformers import util
-                    query_emb = rag.embeddings.embed_query(question)
+                    from app.core.performance_optimizations import (
+                        get_cached_embedding, 
+                        create_embedding_cache_key
+                    )
+                    
+                    # Use cached embedding for query
+                    query_cache_key = create_embedding_cache_key(question)
+                    query_emb = get_cached_embedding(
+                        query_cache_key,
+                        rag.embeddings.embed_query,
+                        question
+                    )
+                    
                     # Only check first doc for quick confidence estimate
-                    first_doc_emb = rag.embeddings.embed_query(docs[0].page_content)
+                    first_doc_cache_key = create_embedding_cache_key(docs[0].page_content[:500])
+                    first_doc_emb = get_cached_embedding(
+                        first_doc_cache_key,
+                        rag.embeddings.embed_query,
+                        docs[0].page_content
+                    )
+                    
                     max_sim = util.cos_sim(query_emb, first_doc_emb).item()
                     eval_scores = {"max_similarity": max_sim, "avg_similarity": max_sim}
                 except Exception as e:
                     print(f"Error computing similarity: {e}")
-                    eval_scores = {"max_similarity": 0.5, "avg_similarity": 0.5}
+                    # Fallback without caching
+                    try:
+                        query_emb = rag.embeddings.embed_query(question)
+                        first_doc_emb = rag.embeddings.embed_query(docs[0].page_content)
+                        max_sim = util.cos_sim(query_emb, first_doc_emb).item()
+                        eval_scores = {"max_similarity": max_sim, "avg_similarity": max_sim}
+                    except:
+                        eval_scores = {"max_similarity": 0.5, "avg_similarity": 0.5}
             
             # 4. Build context & messages
             context = rag.format_func(docs)
@@ -362,19 +398,37 @@ Trả lời:"""
             if show_sources and docs:
                 from sentence_transformers import util
                 
-                # Reuse query_emb from step 3 if available, otherwise compute once
-                if query_emb is None:
-                    query_emb = rag.embeddings.embed_query(question)
+                # Reuse query_emb from step 3 if available, otherwise compute once with cache
+                from app.core.performance_optimizations import (
+                    get_cached_embedding, 
+                    create_embedding_cache_key
+                )
                 
-                # Process sources (limit to top 5 for speed, or all if fewer)
-                max_sources = min(5, len(docs))
+                if query_emb is None:
+                    query_cache_key = create_embedding_cache_key(question)
+                    query_emb = get_cached_embedding(
+                        query_cache_key,
+                        rag.embeddings.embed_query,
+                        question
+                    )
+                
+                # Process sources (limit for speed)
+                from app.core.config import settings
+                max_sources_to_process = getattr(settings, 'MAX_SOURCES_TO_PROCESS', 5)
+                max_sources = min(max_sources_to_process, len(docs))
                 for i, doc in enumerate(docs[:max_sources], 1):
                     try:
                         # Only compute similarity if not already computed in eval_scores
                         if i == 1 and eval_scores.get("max_similarity"):
                             sim = eval_scores["max_similarity"]
                         else:
-                            doc_emb = rag.embeddings.embed_query(doc.page_content)
+                            # Use cached embeddings for document content
+                            doc_cache_key = create_embedding_cache_key(doc.page_content[:500])
+                            doc_emb = get_cached_embedding(
+                                doc_cache_key,
+                                rag.embeddings.embed_query,
+                                doc.page_content
+                            )
                             sim = util.cos_sim(query_emb, doc_emb).item()
                         
                         citation = rag.citation_manager.format_citation(doc, i) if hasattr(rag, 'citation_manager') else f"[{i}] {doc.metadata.get('filename', 'unknown')}"
@@ -419,17 +473,17 @@ Trả lời:"""
             
         except Exception as e:
             error_msg = str(e)
-            print(f"Error in ask_question_stream for project {project_id}: {error_msg}")
+            print(f"Error in ask_question_stream for workspace {workspace_id}: {error_msg}")
             yield {
                 "type": "error",
                 "error": error_msg,
                 "answer": f"Lỗi khi xử lý câu hỏi: {error_msg}"
             }
     
-    def generate_conversation_title(self, project_id: str, chroma_db_path: str, first_message: str) -> str:
+    def generate_conversation_title(self, workspace_id: str, chroma_db_path: str, first_message: str) -> str:
         """Generate a concise title for conversation from first message using LLM"""
         try:
-            rag = self.get_rag_system(project_id, chroma_db_path)
+            rag = self.get_rag_system(workspace_id, chroma_db_path)
             
             # Use LLM to generate a short, descriptive title
             title_prompt = f"""Tạo một tiêu đề ngắn gọn (tối đa 6-8 từ) cho cuộc trò chuyện dựa trên câu hỏi đầu tiên sau đây.
@@ -473,7 +527,7 @@ Tiêu đề:"""
     
     def index_file(
         self,
-        project_id: str,
+        workspace_id: str,
         chroma_db_path: str,
         file_path: Path
     ) -> Dict[str, Any]:
@@ -487,7 +541,7 @@ Tiêu đề:"""
         file_hash_str = file_hash.hexdigest()
         
         # Get or create RAG system
-        rag = self.get_rag_system(project_id, chroma_db_path)
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         
         # Check if file is already indexed
         file_index = rag.file_index
@@ -612,9 +666,9 @@ Tiêu đề:"""
             "indexed_at": None
         }
     
-    def get_sources(self, project_id: str, chroma_db_path: str) -> List[Dict[str, Any]]:
-        """Get all indexed sources for a project"""
-        rag = self.get_rag_system(project_id, chroma_db_path)
+    def get_sources(self, workspace_id: str, chroma_db_path: str) -> List[Dict[str, Any]]:
+        """Get all indexed sources for a workspace."""
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         
         sources = []
         for file_id, meta in rag.file_index.index.items():
@@ -633,12 +687,12 @@ Tiêu đề:"""
     
     def delete_source(
         self,
-        project_id: str,
+        workspace_id: str,
         chroma_db_path: str,
         source_id: str
     ) -> bool:
         """Delete a source from the index"""
-        rag = self.get_rag_system(project_id, chroma_db_path)
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         
         if source_id in rag.file_index.index:
             del rag.file_index.index[source_id]
@@ -647,9 +701,9 @@ Tiêu đề:"""
         
         return False
     
-    def list_files(self, project_id: str, chroma_db_path: str) -> List[Dict[str, Any]]:
-        """List all indexed files for a project (similar to gemini-file-search.py)"""
-        rag = self.get_rag_system(project_id, chroma_db_path)
+    def list_files(self, workspace_id: str, chroma_db_path: str) -> List[Dict[str, Any]]:
+        """List all indexed files for a workspace (similar to gemini-file-search.py)."""
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         
         files = []
         for file_id, meta in rag.file_index.index.items():
@@ -668,9 +722,9 @@ Tiêu đề:"""
         
         return files
     
-    def get_file_stats(self, project_id: str, chroma_db_path: str) -> Dict[str, Any]:
+    def get_file_stats(self, workspace_id: str, chroma_db_path: str) -> Dict[str, Any]:
         """Get statistics about indexed files (similar to gemini-file-search.py)"""
-        rag = self.get_rag_system(project_id, chroma_db_path)
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         stats = rag.file_index.get_file_stats()
         
         return {
@@ -682,13 +736,13 @@ Tiêu đề:"""
     
     def search_in_file(
         self,
-        project_id: str,
+        workspace_id: str,
         chroma_db_path: str,
         question: str,
         filename: str
     ) -> Dict[str, Any]:
         """Search within a specific file (similar to gemini-file-search.py)"""
-        rag = self.get_rag_system(project_id, chroma_db_path)
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         result = rag.search_in_file(question, filename)
         
         # Format sources for API response
@@ -709,12 +763,12 @@ Tiêu đề:"""
     
     def get_file_details(
         self,
-        project_id: str,
+        workspace_id: str,
         chroma_db_path: str,
         source_id: str
     ) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific file"""
-        rag = self.get_rag_system(project_id, chroma_db_path)
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         
         if source_id not in rag.file_index.index:
             return None
@@ -737,31 +791,31 @@ Tiêu đề:"""
     
     def rebuild_index(
         self,
-        project_id: str,
+        workspace_id: str,
         chroma_db_path: str,
         force_rebuild: bool = False
     ) -> Dict[str, Any]:
-        """Rebuild the RAG index for a project"""
+        """Rebuild the RAG index for a workspace."""
         # Remove existing instance to force rebuild
-        if project_id in self._instances:
-            del self._instances[project_id]
+        if workspace_id in self._instances:
+            del self._instances[workspace_id]
         
         # Get new instance with rebuild
-        rag = self.get_rag_system(project_id, chroma_db_path)
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
         rag.setup(force_rebuild=force_rebuild)
         
         # Get stats after rebuild
-        stats = self.get_file_stats(project_id, chroma_db_path)
+        stats = self.get_file_stats(workspace_id, chroma_db_path)
         
         return {
             "message": "Index rebuilt successfully",
             "stats": stats
         }
     
-    def close_rag_system(self, project_id: str):
-        """Close and remove RAG system instance (to release file handles)"""
-        if project_id in self._instances:
-            rag = self._instances[project_id]
+    def close_rag_system(self, workspace_id: str):
+        """Close and remove RAG system instance (to release file handles)."""
+        if workspace_id in self._instances:
+            rag = self._instances[workspace_id]
             try:
                 # Close vectorstore connections if possible
                 if hasattr(rag, 'search_manager') and rag.search_manager.vectorstore:
@@ -785,11 +839,11 @@ Tiêu đề:"""
                     rag.search_manager.hybrid_retriever = None
                 
             except Exception as e:
-                print(f"Warning: Error closing RAG system for project {project_id}: {e}")
+                print(f"Warning: Error closing RAG system for workspace {workspace_id}: {e}")
             finally:
                 # Remove from instances dict
-                del self._instances[project_id]
-                print(f"✅ Closed RAG system for project {project_id}")
+                del self._instances[workspace_id]
+                print(f"✅ Closed RAG system for workspace {workspace_id}")
                 
                 # Force garbage collection to release file handles
                 import gc

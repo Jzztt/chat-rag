@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -10,16 +10,14 @@ import { MessageBubble } from './MessageBubble'
 
 /**
  * ChatPanel - Responsive presentational component for chat interface
- * Design Pattern: Presentational Component with Responsive Design
  */
 export function ChatPanel() {
-  const { activeConversationId, conversations, currentProject, setActiveConversationId } = useAppStore()
+  const { activeConversationId, conversations } = useAppStore()
   const [input, setInput] = useState('')
   const { sendMessage, isLoading, error, streamingText, lastResponse } = useChat(
-    currentProject?.id || null,
     activeConversationId
   )
-  const { refreshConversations } = useConversations(currentProject?.id || null)
+  const { refreshConversations } = useConversations()
   
   const activeConversation = conversations.find(
     c => c.id === activeConversationId
@@ -32,23 +30,12 @@ export function ChatPanel() {
     setInput('')
     
     try {
-      const response = await sendMessage(question)
+      await sendMessage(question)
       // Refresh conversations to get updated conversation with new messages
       await refreshConversations()
     } catch (err) {
-      // Error is handled by useChat hook
       console.error('Error sending message:', err)
     }
-  }
-
-  if (!currentProject) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground p-4">
-        <div className="text-center max-w-md">
-          <p className="text-sm sm:text-base">Please select a project first</p>
-        </div>
-      </div>
-    )
   }
 
   if (!activeConversation) {
@@ -63,14 +50,12 @@ export function ChatPanel() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
-      {/* Error Message */}
       {error && (
         <div className="bg-destructive/10 text-destructive px-4 py-2 text-sm">
           {error}
         </div>
       )}
 
-      {/* Messages Area */}
       <ScrollArea className="flex-1">
         <div className="space-y-4 p-4 sm:p-6 max-w-3xl mx-auto w-full">
           {activeConversation.messages.length === 0 ? (
@@ -85,7 +70,6 @@ export function ChatPanel() {
                   message={message} 
                 />
               ))}
-              {/* Show streaming text if loading */}
               {isLoading && streamingText && (
                 <MessageBubble 
                   message={{
@@ -109,7 +93,6 @@ export function ChatPanel() {
         </div>
       </ScrollArea>
 
-      {/* Input Area */}
       <div className="border-t border-border p-3 sm:p-4 bg-card">
         <div className="max-w-3xl mx-auto flex gap-2">
           <Input

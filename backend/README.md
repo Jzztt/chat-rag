@@ -4,7 +4,7 @@ Backend API chuyên nghiệp cho hệ thống Chat RAG, được xây dựng v�
 
 ## ✨ Tính năng
 
-- ✅ **RESTful API đầy đủ** cho chat, conversations, projects, files
+- ✅ **RESTful API đầy đủ** cho chat, conversations và knowledge base
 - ✅ **Streaming Chat Responses** - Real-time streaming giống ChatGPT
 - ✅ **LLM Decision Layer** - LLM tự quyết định có cần RAG hay không
 - ✅ **Multi-hop Reasoning** - Tìm kiếm và tinh chỉnh ngữ cảnh nhiều lần
@@ -12,7 +12,7 @@ Backend API chuyên nghiệp cho hệ thống Chat RAG, được xây dựng v�
 - ✅ **Cross-encoder Re-ranking** - Cải thiện độ chính xác retrieval
 - ✅ **Query Expansion** - Mở rộng câu hỏi với synonyms và related terms
 - ✅ **Parent-Child Chunking** - Chia tài liệu theo cấu trúc phân cấp
-- ✅ **Quản lý Projects và Conversations** - Tổ chức dự án và cuộc trò chuyện
+- ✅ **Global Knowledge Base** - Một kho tài liệu dùng chung cho mọi cuộc trò chuyện
 - ✅ **Upload và Index Files** - Hỗ trợ PDF, DOCX, TXT, MD
 - ✅ **Source Management** - Quản lý nguồn tài liệu (giống NotebookLM)
 - ✅ **Database SQLite** với SQLAlchemy ORM
@@ -30,13 +30,11 @@ backend/
 │   │   ├── config.py      # Settings và environment variables
 │   │   └── database.py    # Database connection và session
 │   ├── models/            # Database models (SQLAlchemy)
-│   │   ├── project.py     # Project model
 │   │   ├── conversation.py # Conversation và Message models
 │   │   └── source.py      # Source (file) model
 │   ├── routers/          # API endpoints
 │   │   ├── chat.py        # Chat streaming endpoint
 │   │   ├── conversations.py # Conversation CRUD
-│   │   ├── projects.py    # Project CRUD
 │   │   ├── upload.py      # File upload và indexing
 │   │   └── sources.py     # Source management
 │   ├── services/         # Business logic
@@ -158,14 +156,6 @@ Sau khi khởi động server, truy cập:
 
 ## 🔌 API Endpoints
 
-### Projects
-
-- `GET /api/v1/projects` - Lấy danh sách tất cả projects
-- `POST /api/v1/projects` - Tạo project mới
-- `GET /api/v1/projects/{project_id}` - Lấy project theo ID
-- `PUT /api/v1/projects/{project_id}` - Cập nhật project
-- `DELETE /api/v1/projects/{project_id}` - Xóa project (và tất cả dữ liệu liên quan)
-
 ### Chat (Streaming)
 
 - `POST /api/v1/chat` - Gửi câu hỏi và nhận phản hồi streaming (SSE)
@@ -173,7 +163,6 @@ Sau khi khởi động server, truy cập:
     ```json
     {
       "question": "Câu hỏi của bạn",
-      "project_id": "uuid",
       "conversation_id": "uuid (optional)",
       "enable_llm_decision": true, // LLM quyết định có cần RAG
       "enable_multi_hop": true, // Bật multi-hop reasoning
@@ -186,7 +175,7 @@ Sau khi khởi động server, truy cập:
 
 ### Conversations
 
-- `GET /api/v1/conversations?project_id={id}` - Lấy danh sách conversations (filter theo project)
+- `GET /api/v1/conversations` - Lấy danh sách conversations
 - `POST /api/v1/conversations` - Tạo conversation mới
 - `GET /api/v1/conversations/{conversation_id}` - Lấy conversation theo ID
 - `PATCH /api/v1/conversations/{conversation_id}` - Cập nhật title của conversation
@@ -194,42 +183,25 @@ Sau khi khởi động server, truy cập:
 
 ### Upload
 
-- `POST /api/v1/upload?project_id={id}&conversation_id={id}` - Upload và index files
-  - **Query Parameters**:
-    - `project_id` (required): ID của project
-    - `conversation_id` (optional): ID của conversation để attach sources
+- `POST /api/v1/upload?conversation_id={id}` - Upload và index files (conversation_id optional để attach)
   - **Body**: `multipart/form-data` với field `files[]`
   - **Supported formats**: PDF, DOCX, TXT, MD
 
 ### Sources
 
-- `GET /api/v1/sources?project_id={id}&conversation_id={id}` - Lấy danh sách sources
-  - **Query Parameters**:
-    - `project_id` (required): ID của project
-    - `conversation_id` (optional): Filter sources theo conversation (giống NotebookLM)
-- `GET /api/v1/sources/stats?project_id={id}` - Lấy thống kê sources
-- `GET /api/v1/sources/{source_id}?project_id={id}` - Lấy chi tiết source
-- `POST /api/v1/sources/{source_id}/search?project_id={id}` - Tìm kiếm trong file
-- `POST /api/v1/sources/rebuild?project_id={id}` - Rebuild index
-- `DELETE /api/v1/sources/{source_id}?project_id={id}` - Xóa source (detach khỏi conversation)
+- `GET /api/v1/sources?conversation_id={id}` - Lấy danh sách sources (conversation_id optional để filter)
+- `GET /api/v1/sources/stats` - Lấy thống kê sources
+- `GET /api/v1/sources/{source_id}` - Lấy chi tiết source
+- `POST /api/v1/sources/{source_id}/search` - Tìm kiếm trong file
+- `POST /api/v1/sources/rebuild?force=false` - Rebuild index
+- `DELETE /api/v1/sources/{source_id}?conversation_id={id}` - Xóa source (optional validate theo conversation)
 
 ## 💡 Ví dụ sử dụng
-
-### Tạo project
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/projects" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "My Project",
-    "description": "Test project"
-  }'
-```
 
 ### Upload file
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/upload?project_id={project_id}&conversation_id={conversation_id}" \
+curl -X POST "http://localhost:8000/api/v1/upload?conversation_id={conversation_id}" \
   -F "files=@document.pdf"
 ```
 
@@ -240,7 +212,6 @@ curl -X POST "http://localhost:8000/api/v1/chat" \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What is this document about?",
-    "project_id": "{project_id}",
     "conversation_id": "{conversation_id}",
     "enable_llm_decision": true,
     "enable_multi_hop": true,
@@ -254,7 +225,7 @@ curl -X POST "http://localhost:8000/api/v1/chat" \
 const eventSource = new EventSource(
   `http://localhost:8000/api/v1/chat?question=${encodeURIComponent(
     question
-  )}&project_id=${projectId}`
+  )}&conversation_id=${conversationId}`
 );
 
 eventSource.onmessage = (event) => {
@@ -275,7 +246,7 @@ eventSource.onmessage = (event) => {
 ### Lấy sources theo conversation
 
 ```bash
-curl "http://localhost:8000/api/v1/sources?project_id={project_id}&conversation_id={conversation_id}"
+curl "http://localhost:8000/api/v1/sources?conversation_id={conversation_id}"
 ```
 
 ## 🗄️ Database
@@ -284,10 +255,9 @@ Database SQLite được tạo tự động tại `chat_rag.db` khi chạy lần
 
 ### Schema
 
-- **Projects**: Quản lý projects với chroma_db_path riêng
-- **Conversations**: Quản lý conversations, mỗi conversation thuộc một project
+- **Conversations**: Danh sách các cuộc trò chuyện
 - **Messages**: Lưu trữ messages trong conversations với metadata (used_rag, hops, timing)
-- **Sources**: Quản lý files, có thể attach vào conversations (giống NotebookLM)
+- **Sources**: Quản lý files thuộc knowledge base (tùy chọn gắn với conversation)
 
 ### Reset database
 
@@ -315,7 +285,7 @@ python -m app.main
 - Thêm frontend URL vào `CORS_ORIGINS` trong `.env`
 - Kiểm tra format: comma-separated hoặc JSON array
 
-### Lỗi PermissionError khi xóa project
+### Lỗi PermissionError khi xóa dữ liệu knowledge base
 
 - Đảm bảo ChromaDB connection đã được đóng trước khi xóa
 - Hệ thống tự động retry với delay tăng dần

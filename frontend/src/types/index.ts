@@ -2,7 +2,6 @@
 export interface ChatRequest {
   question: string
   conversation_id?: string
-  project_id: string
   enable_llm_decision?: boolean  // LLM decides if RAG is needed
   enable_multi_hop?: boolean  // Enable multi-hop reasoning
   max_hops?: number  // Maximum number of search hops
@@ -31,7 +30,6 @@ export interface ChatResponse {
 
 export interface Source {
   id: string
-  project_id: string
   conversation_id?: string | null
   filename: string
   filepath: string
@@ -89,7 +87,6 @@ export interface SearchInFileResponse {
 
 export interface Conversation {
   id: string
-  project_id: string
   title: string
   messages: Message[]
   created_at: string
@@ -108,14 +105,6 @@ export interface Message {
     streaming_ms: number
     total_s: number
   }
-}
-
-export interface Project {
-  id: string
-  name: string
-  description: string
-  created_at: string
-  chroma_db_path: string
 }
 
 export interface UploadResponse {

@@ -4,7 +4,6 @@ import type {
   ChatResponse, 
   Source, 
   Conversation, 
-  Project,
   UploadResponse,
   SourceStats,
   FileDetails,
@@ -96,15 +95,13 @@ export const chatApi = {
     }
   },
 
-  getConversations: async (projectId?: string): Promise<Conversation[]> => {
-    const params = projectId ? `?project_id=${projectId}` : ''
-    const response = await api.get<{ conversations: Conversation[] }>(`/conversations${params}`)
+  getConversations: async (): Promise<Conversation[]> => {
+    const response = await api.get<{ conversations: Conversation[] }>('/conversations')
     return response.data.conversations
   },
 
-  createConversation: async (projectId: string, title?: string): Promise<Conversation> => {
+  createConversation: async (title?: string): Promise<Conversation> => {
     const response = await api.post<Conversation>('/conversations', {
-      project_id: projectId,
       title: title || 'New Conversation'
     })
     return response.data
@@ -127,15 +124,15 @@ export const chatApi = {
 
 // File Management API
 export const fileApi = {
-  uploadFiles: async (files: File[], projectId: string, conversationId?: string): Promise<UploadResponse> => {
+  uploadFiles: async (files: File[], conversationId?: string): Promise<UploadResponse> => {
     const formData = new FormData()
     files.forEach(file => {
       formData.append('files', file)
     })
     
     const params = conversationId 
-      ? `?project_id=${projectId}&conversation_id=${conversationId}`
-      : `?project_id=${projectId}`
+      ? `?conversation_id=${conversationId}`
+      : ''
     
     const response = await api.post<UploadResponse>(`/upload${params}`, formData, {
       headers: {
@@ -145,77 +142,48 @@ export const fileApi = {
     return response.data
   },
 
-  getSources: async (projectId: string, conversationId?: string): Promise<Source[]> => {
+  getSources: async (conversationId?: string): Promise<Source[]> => {
     const params = conversationId
-      ? `?project_id=${projectId}&conversation_id=${conversationId}`
-      : `?project_id=${projectId}`
+      ? `?conversation_id=${conversationId}`
+      : ''
     const response = await api.get<{ sources: Source[] }>(`/sources${params}`)
     return response.data.sources
   },
 
-  getSourceStats: async (projectId: string): Promise<SourceStats> => {
-    const response = await api.get<SourceStats>(`/sources/stats?project_id=${projectId}`)
+  getSourceStats: async (): Promise<SourceStats> => {
+    const response = await api.get<SourceStats>('/sources/stats')
     return response.data
   },
 
-  getSourceDetails: async (sourceId: string, projectId: string): Promise<FileDetails> => {
-    const response = await api.get<FileDetails>(`/sources/${sourceId}?project_id=${projectId}`)
+  getSourceDetails: async (sourceId: string): Promise<FileDetails> => {
+    const response = await api.get<FileDetails>(`/sources/${sourceId}`)
     return response.data
   },
 
   searchInFile: async (
     sourceId: string,
-    projectId: string,
     request: SearchInFileRequest
   ): Promise<SearchInFileResponse> => {
     const response = await api.post<SearchInFileResponse>(
-      `/sources/${sourceId}/search?project_id=${projectId}`,
+      `/sources/${sourceId}/search`,
       request
     )
     return response.data
   },
 
-  rebuildIndex: async (projectId: string, force: boolean = false): Promise<{ message: string; stats: SourceStats }> => {
+  rebuildIndex: async (force: boolean = false): Promise<{ message: string; stats: SourceStats }> => {
     const response = await api.post<{ message: string; stats: SourceStats }>(
-      `/sources/rebuild?project_id=${projectId}&force=${force}`
+      `/sources/rebuild?force=${force}`
     )
     return response.data
   },
 
-  deleteSource: async (sourceId: string, projectId: string, conversationId?: string): Promise<void> => {
+  deleteSource: async (sourceId: string, conversationId?: string): Promise<void> => {
     const params = conversationId
-      ? `?project_id=${projectId}&conversation_id=${conversationId}`
-      : `?project_id=${projectId}`
+      ? `?conversation_id=${conversationId}`
+      : ''
     await api.delete(`/sources/${sourceId}${params}`)
   },
 }
-
-// Project API
-export const projectApi = {
-  getProjects: async (): Promise<Project[]> => {
-    const response = await api.get<{ projects: Project[] }>('/projects')
-    return response.data.projects
-  },
-
-  createProject: async (data: { name: string; description?: string }): Promise<Project> => {
-    const response = await api.post<Project>('/projects', data)
-    return response.data
-  },
-
-  getProject: async (projectId: string): Promise<Project> => {
-    const response = await api.get<Project>(`/projects/${projectId}`)
-    return response.data
-  },
-
-  updateProject: async (projectId: string, data: Partial<Project>): Promise<Project> => {
-    const response = await api.put<Project>(`/projects/${projectId}`, data)
-    return response.data
-  },
-
-  deleteProject: async (projectId: string): Promise<void> => {
-    await api.delete(`/projects/${projectId}`)
-  },
-}
-
 export default api
 

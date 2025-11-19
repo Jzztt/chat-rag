@@ -1,33 +1,27 @@
 import { ReactNode, useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { LeftSidebar } from './LeftSidebar'
-import { CenterPanel } from './CenterPanel'
-import { RightSidebar } from './RightSidebar'
 import { Button } from '@/components/ui/button'
-import { Menu, X } from 'lucide-react'
-import { useAppStore } from '@/store/useAppStore'
+import { Menu } from 'lucide-react'
 
 interface MainLayoutProps {
   children?: ReactNode
 }
 
 /**
- * MainLayout - Responsive container component for 3-panel layout
- * Design Pattern: Container/Presentational with Responsive Design
+ * MainLayout - Responsive container component for shared navigation layout
  */
 export function MainLayout({ children }: MainLayoutProps) {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(false)
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const { setSidebarOpen } = useAppStore()
+  const location = useLocation()
 
   // Detect mobile screen size
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768)
-      // Auto-close sidebars on mobile when screen resizes
       if (window.innerWidth >= 768) {
         setLeftSidebarOpen(false)
-        setRightSidebarOpen(false)
       }
     }
 
@@ -36,14 +30,10 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Update global sidebar state
-  useEffect(() => {
-    setSidebarOpen(leftSidebarOpen || rightSidebarOpen)
-  }, [leftSidebarOpen, rightSidebarOpen, setSidebarOpen])
+  const routeTitle = location.pathname === '/knowledge-base' ? 'Knowledge Base' : 'Chat'
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      {/* Mobile Header with Menu Buttons */}
       {isMobile && (
         <header className="fixed top-0 left-0 right-0 z-40 h-14 border-b border-border bg-card flex items-center justify-between px-4 md:hidden">
           <Button
@@ -55,20 +45,12 @@ export function MainLayout({ children }: MainLayoutProps) {
             <Menu className="h-5 w-5" />
           </Button>
           
-          <h1 className="text-lg font-bold text-foreground">POLY CHAT</h1>
+          <h1 className="text-lg font-bold text-foreground">{routeTitle}</h1>
           
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setRightSidebarOpen(true)}
-            className="md:hidden"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
+          <span className="text-sm font-medium text-muted-foreground">Poly Chat</span>
         </header>
       )}
 
-      {/* Left Sidebar - Desktop always visible, Mobile as drawer */}
       {!isMobile && <LeftSidebar />}
       {isMobile && (
         <LeftSidebar 
@@ -78,25 +60,9 @@ export function MainLayout({ children }: MainLayoutProps) {
         />
       )}
       
-      {/* Center Panel - Main Content */}
       <div className={`flex-1 flex flex-col overflow-hidden ${isMobile ? 'mt-14' : ''}`}>
-        <CenterPanel 
-          mobile={isMobile}
-          onToggleRightSidebar={() => setRightSidebarOpen(!rightSidebarOpen)}
-        >
-          {children}
-        </CenterPanel>
+        {children}
       </div>
-      
-      {/* Right Sidebar - Desktop always visible, Mobile as drawer */}
-      {!isMobile && <RightSidebar />}
-      {isMobile && (
-        <RightSidebar 
-          mobile 
-          open={rightSidebarOpen} 
-          onOpenChange={setRightSidebarOpen} 
-        />
-      )}
     </div>
   )
 }

@@ -4,11 +4,15 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+import asyncio
+import copy
 import json
+import threading
 import time
 from app.core.database import get_db
+from app.core.response_cache import response_cache, make_cache_key
+from app.core.workspace import get_default_workspace
 from app.models.conversation import Conversation, Message
-from app.models.project import Project
 from app.services.rag_service import rag_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -17,7 +21,6 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     question: str
     conversation_id: Optional[str] = None
-    project_id: str
     enable_llm_decision: Optional[bool] = True  # LLM decides if RAG is needed
     enable_multi_hop: Optional[bool] = True  # Enable multi-hop reasoning
     max_hops: Optional[int] = 2  # Maximum number of search hops
@@ -37,10 +40,7 @@ async def send_message_stream(
     db: Session = Depends(get_db)
 ):
     """Send a chat message and get streaming RAG response"""
-    # Validate project exists
-    project = db.query(Project).filter(Project.id == request.project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    workspace = get_default_workspace()
     
     # Get or create conversation
     conversation = None
@@ -56,7 +56,6 @@ async def send_message_stream(
     if not conversation:
         # Create new conversation with temporary title
         conversation = Conversation(
-            project_id=request.project_id,
             title="New Conversation"
         )
         db.add(conversation)
@@ -70,7 +69,9 @@ async def send_message_stream(
     
     # Save conversation_id and other needed values before entering generator
     conversation_id = conversation.id
-    chroma_db_path = project.chroma_db_path
+    chroma_db_path = workspace.chroma_db_path
+    cache_key = make_cache_key(request.question.strip() or request.question, workspace.id)
+    cached_response = response_cache.get(cache_key)
     
     # Save user message
     user_message = Message(
@@ -102,18 +103,110 @@ async def send_message_stream(
         confidence = "medium"
         eval_scores = {}
         
+        async def rag_stream():
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue = asyncio.Queue()
+
+            def worker():
+                try:
+                    for chunk in rag_service.ask_question_stream(
+                        workspace_id=workspace.id,
+                        chroma_db_path=chroma_db_path,
+                        question=request.question,
+                        show_sources=True,
+                        enable_llm_decision=request.enable_llm_decision,
+                        enable_multi_hop=request.enable_multi_hop,
+                        max_hops=request.max_hops
+                    ):
+                        asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
+                except Exception as exc:
+                    asyncio.run_coroutine_threadsafe(queue.put({
+                        "type": "error",
+                        "error": str(exc),
+                        "answer": f"Lỗi khi xử lý câu hỏi: {exc}"
+                    }), loop).result()
+                finally:
+                    asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
+
+            threading.Thread(target=worker, daemon=True).start()
+
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield item
+
         try:
-            # Stream RAG response with enhanced features
+            if cached_response:
+                cached_payload = copy.deepcopy(cached_response)
+                cached_timing = cached_payload.get("timing", {}) or {}
+                cached_timing.update({"cache_hit": True, "total_ms": 0})
+                full_answer = cached_payload.get("answer", "")
+                sources = cached_payload.get("sources", []) or []
+                confidence = cached_payload.get("confidence", "medium")
+                eval_scores = cached_payload.get("eval_scores", {}) or {}
+                used_rag_flag = cached_payload.get("used_rag", True)
+                hops = cached_payload.get("hops", 1)
+
+                message_metadata = {
+                    "used_rag": used_rag_flag,
+                    "hops": hops,
+                    "timing": cached_timing
+                }
+                sources_with_metadata = copy.deepcopy(sources) if sources else []
+                if sources_with_metadata:
+                    sources_with_metadata[0] = {**sources_with_metadata[0], **message_metadata}
+                else:
+                    sources_with_metadata = [message_metadata]
+
+                assistant_message = Message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=full_answer,
+                    sources=sources_with_metadata
+                )
+                db_session.add(assistant_message)
+
+                if is_first_message:
+                    try:
+                        conversation = db_session.query(Conversation).filter(
+                            Conversation.id == conversation_id
+                        ).first()
+                        
+                        if conversation:
+                            generated_title = rag_service.generate_conversation_title(
+                                workspace_id=workspace.id,
+                                chroma_db_path=chroma_db_path,
+                                first_message=request.question
+                            )
+                            conversation.title = generated_title
+                    except Exception as e:
+                        print(f"Warning: Failed to generate title from cache: {e}")
+                        if not conversation:
+                            conversation = db_session.query(Conversation).filter(
+                                Conversation.id == conversation_id
+                            ).first()
+                        if conversation:
+                            conversation.title = request.question[:50] + "..." if len(request.question) > 50 else request.question
+
+                db_session.commit()
+
+                yield f"data: {json.dumps({
+                    'type': 'done',
+                    'answer': full_answer,
+                    'sources': sources,
+                    'conversation_id': conversation_id,
+                    'confidence': confidence,
+                    'eval_scores': eval_scores,
+                    'used_rag': used_rag_flag,
+                    'hops': hops,
+                    'timing': cached_timing
+                })}\n\n"
+                return
+
+            # Stream RAG response with enhanced features (run sync pipeline in worker thread)
             rag_start_time = time.time()
-            for chunk_data in rag_service.ask_question_stream(
-                project_id=request.project_id,
-                chroma_db_path=chroma_db_path,
-                question=request.question,
-                show_sources=True,
-                enable_llm_decision=request.enable_llm_decision,
-                enable_multi_hop=request.enable_multi_hop,
-                max_hops=request.max_hops
-            ):
+            async for chunk_data in rag_stream():
                 if chunk_data.get("type") == "chunk":
                     # Stream text chunk
                     chunk_text = chunk_data.get("content", "")
@@ -153,11 +246,14 @@ async def send_message_stream(
                         "total_s": round(total_time, 2)
                     }
                     
+                    used_rag_flag = chunk_data.get("used_rag", True)
+                    hops = chunk_data.get("hops", 1)
+                    
                     # Save assistant message to database using new session
                     # Include debug metadata in sources
                     message_metadata = {
-                        "used_rag": chunk_data.get("used_rag", True),
-                        "hops": chunk_data.get("hops", 1),
+                        "used_rag": used_rag_flag,
+                        "hops": hops,
                         "timing": timing_info
                     }
                     # Add metadata to sources if sources exist, otherwise create metadata-only source
@@ -186,7 +282,7 @@ async def send_message_stream(
                             
                             if conversation:
                                 generated_title = rag_service.generate_conversation_title(
-                                    project_id=request.project_id,
+                                    workspace_id=workspace.id,
                                     chroma_db_path=chroma_db_path,
                                     first_message=request.question
                                 )
@@ -203,6 +299,16 @@ async def send_message_stream(
                     
                     db_session.commit()
                     
+                    response_cache.set(cache_key, {
+                        "answer": full_answer,
+                        "sources": sources,
+                        "confidence": confidence,
+                        "eval_scores": eval_scores,
+                        "used_rag": used_rag_flag,
+                        "hops": hops,
+                        "timing": timing_info
+                    })
+                    
                     # Send final response with enhanced metadata (timing already calculated above)
                     yield f"data: {json.dumps({
                         'type': 'done',
@@ -211,8 +317,8 @@ async def send_message_stream(
                         'conversation_id': conversation_id,
                         'confidence': confidence,
                         'eval_scores': eval_scores,
-                        'used_rag': chunk_data.get('used_rag', True),
-                        'hops': chunk_data.get('hops', 1),
+                        'used_rag': used_rag_flag,
+                        'hops': hops,
                         'timing': timing_info
                     })}\n\n"
                 

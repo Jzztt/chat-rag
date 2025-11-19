@@ -7,7 +7,7 @@ import shutil
 import hashlib
 from app.core.database import get_db
 from app.core.config import settings
-from app.models.project import Project
+from app.core.workspace import get_default_workspace
 from app.models.source import Source
 from app.services.rag_service import rag_service
 
@@ -26,24 +26,20 @@ def get_file_hash(file_path: Path) -> str:
 @router.post("")
 async def upload_files(
     files: List[UploadFile] = File(...),
-    project_id: str = Query(..., description="Project ID to upload files to"),
     conversation_id: str = Query(None, description="Conversation ID to attach sources to"),
     db: Session = Depends(get_db)
 ):
     """Upload and index files"""
     
-    # Validate project
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    workspace = get_default_workspace()
     
-    # Create project upload directory
-    project_upload_dir = settings.UPLOAD_DIR / project_id
-    project_upload_dir.mkdir(parents=True, exist_ok=True)
+    # Create workspace upload directory (for raw uploads)
+    workspace_upload_dir = settings.UPLOAD_DIR / workspace.id
+    workspace_upload_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create project pdfs directory for RAG
-    project_pdfs_dir = Path(project.chroma_db_path).parent / "pdfs"
-    project_pdfs_dir.mkdir(parents=True, exist_ok=True)
+    # Create workspace pdfs directory for RAG
+    workspace_pdfs_dir = Path(workspace.pdf_dir)
+    workspace_pdfs_dir.mkdir(parents=True, exist_ok=True)
     
     uploaded_files = []
     errors = []
@@ -68,22 +64,21 @@ async def upload_files(
                 })
                 continue
             
-            # Save file to project directory
-            file_path = project_pdfs_dir / file.filename
+            # Save file to workspace directory
+            file_path = workspace_pdfs_dir / file.filename
             with open(file_path, "wb") as f:
                 f.write(file_content)
             
             # Index file using RAG service
             try:
                 metadata = rag_service.index_file(
-                    project_id=project_id,
-                    chroma_db_path=project.chroma_db_path,
+                    workspace_id=workspace.id,
+                    chroma_db_path=workspace.chroma_db_path,
                     file_path=file_path
                 )
                 
                 # Save source to database (attached to conversation if provided)
                 source = Source(
-                    project_id=project_id,
                     conversation_id=conversation_id,  # Attach to conversation (like NotebookLM)
                     filename=metadata["filename"],
                     filepath=metadata["filepath"],

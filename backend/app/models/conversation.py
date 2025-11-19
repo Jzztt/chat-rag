@@ -2,12 +2,8 @@
 from sqlalchemy import Column, String, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from typing import TYPE_CHECKING
 from app.core.database import Base
 import uuid
-
-if TYPE_CHECKING:
-    from app.models.project import Project
 
 
 class Conversation(Base):
@@ -15,19 +11,16 @@ class Conversation(Base):
     __tablename__ = "conversations"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    project_id = Column(String, ForeignKey("projects.id"), nullable=False)
     title = Column(String(255), nullable=False, default="New Conversation")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
-    project = relationship("Project", back_populates="conversations")
     
     def to_dict(self):
         return {
             "id": self.id,
-            "project_id": self.project_id,
             "title": self.title,
             "messages": [msg.to_dict() for msg in self.messages],
             "created_at": self.created_at.isoformat() if self.created_at else None,

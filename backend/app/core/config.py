@@ -67,10 +67,25 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 50MB
     ALLOWED_EXTENSIONS: set[str] = {".pdf", ".docx", ".txt", ".md"}
     
+    # Workspace Defaults
+    DEFAULT_WORKSPACE_ID: str = "global-workspace"
+    DEFAULT_WORKSPACE_NAME: str = "Global Workspace"
+    DEFAULT_WORKSPACE_DESCRIPTION: str = "Shared knowledge base for all conversations"
+    
     # RAG Settings
     RAG_DATA_DIR: Path = Path("./data/pdfs")
     CHROMA_DB_BASE_PATH: Path = Path("./chroma_db")
     FILE_INDEX_PATH: Path = Path("./file_index.json")
+    
+    @property
+    def GLOBAL_CHROMA_DB_PATH(self) -> Path:
+        """Path to the shared ChromaDB instance"""
+        return self.CHROMA_DB_BASE_PATH / self.DEFAULT_WORKSPACE_ID
+    
+    @property
+    def GLOBAL_PDFS_DIR(self) -> Path:
+        """Path for globally stored PDF assets"""
+        return self.CHROMA_DB_BASE_PATH / "pdfs"
     
     # Ollama Settings
     OLLAMA_MODEL: str = "llama3.2:3b"
@@ -87,6 +102,18 @@ class Settings(BaseSettings):
     TEMPERATURE: float = 0.7
     SIMILARITY_THRESHOLD: float = 0.3
     
+    # Performance Optimization Settings
+    ENABLE_EMBEDDING_CACHE: bool = True
+    EMBEDDING_CACHE_SIZE: int = 1000
+    MAX_RE_RANK_DOCS: int = 15  # Limit docs for re-ranking
+    MAX_SOURCES_TO_PROCESS: int = 5  # Limit sources processed per response
+    ENABLE_ASYNC_RETRIEVAL: bool = False  # Future: async retrieval
+    REDUCE_MULTI_HOP_BY_DEFAULT: bool = True  # Reduce default max_hops for speed
+    DEFAULT_MAX_HOPS: int = 1  # Default to 1 hop instead of 2 for faster responses
+    RESPONSE_CACHE_ENABLED: bool = True
+    RESPONSE_CACHE_TTL: int = 300  # seconds
+    RESPONSE_CACHE_MAX_ENTRIES: int = 200
+    
     # Logging
     LOG_DIR: Path = Path("./logs")
     LOG_LEVEL: str = "INFO"
@@ -99,5 +126,7 @@ settings = Settings()
 settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 settings.RAG_DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.CHROMA_DB_BASE_PATH.mkdir(parents=True, exist_ok=True)
+settings.GLOBAL_CHROMA_DB_PATH.mkdir(parents=True, exist_ok=True)
+settings.GLOBAL_PDFS_DIR.mkdir(parents=True, exist_ok=True)
 settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
 

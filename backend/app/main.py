@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.routers import chat, conversations, projects, upload, sources
+from app.core.workspace import get_default_workspace
+from app.routers import chat, conversations, upload, sources
 import logging
 
 # Configure logging
@@ -15,6 +16,9 @@ logging.basicConfig(
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+# Ensure default workspace directories exist
+get_default_workspace()
 
 # Create FastAPI app
 app = FastAPI(
@@ -37,7 +41,6 @@ app.add_middleware(
 # Include routers
 app.include_router(chat.router, prefix=settings.API_V1_PREFIX)
 app.include_router(conversations.router, prefix=settings.API_V1_PREFIX)
-app.include_router(projects.router, prefix=settings.API_V1_PREFIX)
 app.include_router(upload.router, prefix=settings.API_V1_PREFIX)
 app.include_router(sources.router, prefix=settings.API_V1_PREFIX)
 

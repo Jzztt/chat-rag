@@ -1,25 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { chatApi } from '@/services/api'
-import type { Conversation, Message } from '@/types'
+import type { Conversation } from '@/types'
 
 /**
  * Hook to fetch and manage conversations
  */
-export function useConversations(projectId: string | null) {
+export function useConversations() {
   const { conversations, setConversations, activeConversationId, setActiveConversationId } = useAppStore()
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    if (!projectId) {
-      setConversations([])
-      return
-    }
-
     const fetchConversations = async () => {
       try {
         setIsLoading(true)
-        const fetchedConversations = await chatApi.getConversations(projectId)
+        const fetchedConversations = await chatApi.getConversations()
         setConversations(fetchedConversations)
       } catch (error) {
         console.error('Failed to fetch conversations:', error)
@@ -29,15 +24,11 @@ export function useConversations(projectId: string | null) {
     }
 
     fetchConversations()
-  }, [projectId, setConversations])
+  }, [setConversations])
 
   const createConversation = async (title: string = 'New Conversation'): Promise<Conversation> => {
-    if (!projectId) {
-      throw new Error('No project selected')
-    }
-
     try {
-      const newConversation = await chatApi.createConversation(projectId, title)
+      const newConversation = await chatApi.createConversation(title)
       setConversations([...conversations, newConversation])
       setActiveConversationId(newConversation.id)
       return newConversation
@@ -53,10 +44,8 @@ export function useConversations(projectId: string | null) {
       const updatedConversations = conversations.filter(c => c.id !== conversationId)
       setConversations(updatedConversations)
       
-      // If deleted conversation was active, set another one or null
       if (activeConversationId === conversationId) {
-        const projectConversations = updatedConversations.filter(c => c.project_id === projectId)
-        setActiveConversationId(projectConversations.length > 0 ? projectConversations[0].id : null)
+        setActiveConversationId(updatedConversations.length > 0 ? updatedConversations[0].id : null)
       }
     } catch (error) {
       console.error('Failed to delete conversation:', error)
@@ -82,7 +71,6 @@ export function useConversations(projectId: string | null) {
       setIsLoading(true)
       const conversation = await chatApi.getConversation(conversationId)
       
-      // Update conversation in store
       setConversations(
         conversations.map(c => c.id === conversationId ? conversation : c)
       )
@@ -97,11 +85,9 @@ export function useConversations(projectId: string | null) {
   }
 
   const refreshConversations = async () => {
-    if (!projectId) return
-    
     try {
       setIsLoading(true)
-      const fetchedConversations = await chatApi.getConversations(projectId)
+      const fetchedConversations = await chatApi.getConversations()
       setConversations(fetchedConversations)
     } catch (error) {
       console.error('Failed to refresh conversations:', error)
@@ -111,7 +97,7 @@ export function useConversations(projectId: string | null) {
   }
 
   return {
-    conversations: conversations.filter(c => c.project_id === projectId),
+    conversations,
     activeConversationId,
     isLoading,
     createConversation,

@@ -4,18 +4,13 @@ import { fileApi } from '@/services/api'
 
 /**
  * Custom Hook for File Upload
- * Design Pattern: Custom Hook Pattern
- * Files are attached to current conversation (like NotebookLM)
+ * Files can optionally be attached to the active conversation
  */
 export function useFileUpload() {
   const [isUploading, setIsUploading] = useState(false)
-  const { currentProject, activeConversationId } = useAppStore()
+  const { activeConversationId } = useAppStore()
 
-  const handleFileUpload = async (files: File[]): Promise<void> => {
-    if (!currentProject) {
-      throw new Error('No project selected')
-    }
-
+  const handleFileUpload = async (files: File[], conversationId?: string): Promise<void> => {
     setIsUploading(true)
     try {
       // Validate file size (50MB max)
@@ -32,11 +27,9 @@ export function useFileUpload() {
         throw new Error('No valid files to upload')
       }
 
-      // Upload files and attach to current conversation (like NotebookLM)
       await fileApi.uploadFiles(
         validFiles, 
-        currentProject.id,
-        activeConversationId || undefined
+        conversationId || activeConversationId || undefined
       )
     } catch (error) {
       console.error('File upload failed:', error)

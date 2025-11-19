@@ -1,27 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { fileApi } from '@/services/api'
-import type { Source, SourceStats, FileDetails, SearchInFileRequest, SearchInFileResponse } from '@/types'
+import type { SourceStats, FileDetails, SearchInFileRequest, SearchInFileResponse } from '@/types'
 
 /**
- * Hook to fetch and manage sources (similar to gemini-file-search.py)
- * Sources are attached to conversation (like NotebookLM)
+ * Hook to fetch and manage sources
  */
-export function useSources(projectId: string | null, conversationId: string | null = null) {
+export function useSources(conversationId: string | null = null) {
   const { sources, setSources, removeSource: removeSourceFromStore } = useAppStore()
   const [isLoading, setIsLoading] = useState(false)
   const [stats, setStats] = useState<SourceStats | null>(null)
 
   useEffect(() => {
-    if (!projectId) {
-      setSources([])
-      return
-    }
-
     const fetchSources = async () => {
       try {
         setIsLoading(true)
-        const fetchedSources = await fileApi.getSources(projectId, conversationId || undefined)
+        const fetchedSources = await fileApi.getSources(conversationId || undefined)
         setSources(fetchedSources)
       } catch (error) {
         console.error('Failed to fetch sources:', error)
@@ -31,13 +25,11 @@ export function useSources(projectId: string | null, conversationId: string | nu
     }
 
     fetchSources()
-  }, [projectId, conversationId, setSources])
+  }, [conversationId, setSources])
 
   const fetchStats = async () => {
-    if (!projectId) return null
-
     try {
-      const fetchedStats = await fileApi.getSourceStats(projectId)
+      const fetchedStats = await fileApi.getSourceStats()
       setStats(fetchedStats)
       return fetchedStats
     } catch (error) {
@@ -47,10 +39,8 @@ export function useSources(projectId: string | null, conversationId: string | nu
   }
 
   const getFileDetails = async (sourceId: string): Promise<FileDetails | null> => {
-    if (!projectId) return null
-
     try {
-      const details = await fileApi.getSourceDetails(sourceId, projectId)
+      const details = await fileApi.getSourceDetails(sourceId)
       return details
     } catch (error) {
       console.error('Failed to get file details:', error)
@@ -62,10 +52,8 @@ export function useSources(projectId: string | null, conversationId: string | nu
     sourceId: string,
     request: SearchInFileRequest
   ): Promise<SearchInFileResponse | null> => {
-    if (!projectId) return null
-
     try {
-      const result = await fileApi.searchInFile(sourceId, projectId, request)
+      const result = await fileApi.searchInFile(sourceId, request)
       return result
     } catch (error) {
       console.error('Failed to search in file:', error)
@@ -74,10 +62,8 @@ export function useSources(projectId: string | null, conversationId: string | nu
   }
 
   const rebuildIndex = async (force: boolean = false): Promise<SourceStats | null> => {
-    if (!projectId) return null
-
     try {
-      const result = await fileApi.rebuildIndex(projectId, force)
+      const result = await fileApi.rebuildIndex(force)
       // Refresh sources and stats after rebuild
       await refreshSources()
       await fetchStats()
@@ -89,10 +75,8 @@ export function useSources(projectId: string | null, conversationId: string | nu
   }
 
   const deleteSource = async (sourceId: string) => {
-    if (!projectId) return
-
     try {
-      await fileApi.deleteSource(sourceId, projectId, conversationId || undefined)
+      await fileApi.deleteSource(sourceId, conversationId || undefined)
       removeSourceFromStore(sourceId)
       // Refresh stats after deletion
       await fetchStats()
@@ -103,10 +87,9 @@ export function useSources(projectId: string | null, conversationId: string | nu
   }
 
   const refreshSources = async () => {
-    if (!projectId) return
     try {
       setIsLoading(true)
-      const fetchedSources = await fileApi.getSources(projectId, conversationId || undefined)
+      const fetchedSources = await fileApi.getSources(conversationId || undefined)
       setSources(fetchedSources)
     } catch (error) {
       console.error('Failed to refresh sources:', error)
@@ -116,7 +99,7 @@ export function useSources(projectId: string | null, conversationId: string | nu
   }
 
   return {
-    sources: sources.filter(s => s.id), // Filter valid sources
+    sources,
     isLoading,
     stats,
     deleteSource,

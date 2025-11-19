@@ -13,13 +13,11 @@ backend/
 │   │   ├── config.py       # Settings và environment variables
 │   │   └── database.py     # Database connection và session
 │   ├── models/            # SQLAlchemy models
-│   │   ├── project.py     # Project model
 │   │   ├── conversation.py # Conversation và Message models
 │   │   └── source.py      # Source file model
 │   ├── routers/           # API endpoints
 │   │   ├── chat.py        # Chat endpoints
 │   │   ├── conversations.py # Conversation endpoints
-│   │   ├── projects.py    # Project CRUD
 │   │   ├── upload.py      # File upload
 │   │   └── sources.py     # Source management
 │   ├── services/          # Business logic
@@ -140,14 +138,6 @@ Sau khi khởi động, truy cập:
 
 ## API Endpoints
 
-### Projects
-
-- `GET /api/v1/projects` - Lấy danh sách projects
-- `POST /api/v1/projects` - Tạo project mới
-- `GET /api/v1/projects/{id}` - Lấy project theo ID
-- `PUT /api/v1/projects/{id}` - Cập nhật project
-- `DELETE /api/v1/projects/{id}` - Xóa project
-
 ### Chat
 
 - `POST /api/v1/chat` - Gửi câu hỏi và nhận phản hồi RAG
@@ -156,7 +146,6 @@ Sau khi khởi động, truy cập:
 ```json
 {
   "question": "Câu hỏi của bạn",
-  "project_id": "project-id",
   "conversation_id": "conversation-id" // optional
 }
 ```
@@ -176,22 +165,21 @@ Sau khi khởi động, truy cập:
 
 ### Upload
 
-- `POST /api/v1/upload?project_id={id}` - Upload và index files
+- `POST /api/v1/upload?conversation_id={id}` - Upload và index files (conversation_id optional để attach)
 
 **Form data:**
 - `files`: File[] (multipart/form-data)
 
 ### Sources
 
-- `GET /api/v1/sources?project_id={id}` - Lấy danh sách sources
-- `DELETE /api/v1/sources/{id}?project_id={id}` - Xóa source
+- `GET /api/v1/sources?conversation_id={id}` - Lấy danh sách sources
+- `DELETE /api/v1/sources/{id}?conversation_id={id}` - Xóa source
 
 ## Workflow sử dụng
 
-1. **Tạo Project**: Tạo project mới để quản lý documents
-2. **Upload Files**: Upload PDF/DOCX/TXT files vào project
-3. **Chat**: Gửi câu hỏi về documents đã upload
-4. **Quản lý**: Xem conversations, sources, và quản lý projects
+1. **Upload Files**: Upload PDF/DOCX/TXT files vào knowledge base (optional attach conversation)
+2. **Chat**: Gửi câu hỏi về documents đã upload
+3. **Quản lý**: Xem conversations và sources từ knowledge base
 
 ## Troubleshooting
 
@@ -219,7 +207,7 @@ Sau khi khởi động, truy cập:
 
 - Kiểm tra file size < 50MB
 - Kiểm tra file extension trong `ALLOWED_EXTENSIONS`
-- Kiểm tra project_id có tồn tại
+- Nếu đính kèm conversation_id, đảm bảo ID đó hợp lệ
 
 ## Database
 
@@ -235,7 +223,7 @@ python backend/run.py
 
 Logs được lưu tại:
 - Application logs: Console output
-- RAG query logs: `logs/rag_queries_{project_id}.jsonl`
+- RAG query logs: `logs/rag_queries_{workspace_id}.jsonl`
 
 ## Performance Tips
 

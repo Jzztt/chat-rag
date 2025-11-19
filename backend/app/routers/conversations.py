@@ -1,5 +1,5 @@
 """Conversations API Router"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -10,7 +10,6 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 class ConversationCreate(BaseModel):
-    project_id: str
     title: Optional[str] = "New Conversation"
 
 
@@ -20,16 +19,10 @@ class ConversationUpdate(BaseModel):
 
 @router.get("")
 async def get_conversations(
-    project_id: Optional[str] = Query(None, description="Filter by project ID"),
     db: Session = Depends(get_db)
 ):
-    """Get all conversations, optionally filtered by project_id"""
-    query = db.query(Conversation)
-    
-    if project_id:
-        query = query.filter(Conversation.project_id == project_id)
-    
-    conversations = query.order_by(Conversation.created_at.desc()).all()
+    """Get all conversations"""
+    conversations = db.query(Conversation).order_by(Conversation.created_at.desc()).all()
     return {"conversations": [c.to_dict() for c in conversations]}
 
 
@@ -40,7 +33,6 @@ async def create_conversation(
 ):
     """Create a new conversation"""
     conversation = Conversation(
-        project_id=conversation_data.project_id,
         title=conversation_data.title or "New Conversation"
     )
     
