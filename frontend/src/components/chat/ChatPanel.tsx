@@ -55,6 +55,15 @@ export function ChatPanel() {
           {error}
         </div>
       )}
+      {!error && lastResponse?.cache_hit && (
+        <div className="bg-amber-50 text-amber-900 px-4 py-2 text-xs sm:text-sm border-b border-amber-200 flex items-center justify-between gap-2">
+          <span>
+            ⚡ Trả lời từ cache {lastResponse.cache_source === 'semantic' ? '(semantic match)' : '(exact match)'}
+            {lastResponse.cache_similarity ? ` • similarity ${(lastResponse.cache_similarity * 100).toFixed(0)}%` : ''}
+          </span>
+          <span className="text-amber-700">RAG vẫn được gọi khi cần nguồn mới.</span>
+        </div>
+      )}
 
       <ScrollArea className="flex-1">
         <div className="space-y-4 p-4 sm:p-6 max-w-3xl mx-auto w-full">
@@ -66,7 +75,7 @@ export function ChatPanel() {
             <>
               {activeConversation.messages.map((message, index) => (
                 <MessageBubble 
-                  key={message.timestamp || `${message.role}-${index}`} 
+                  key={message.timestamp ? `${message.timestamp}-${index}` : `${message.role}-${index}`} 
                   message={message} 
                 />
               ))}

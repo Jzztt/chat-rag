@@ -47,6 +47,11 @@ OPTIMIZATIONS_IMPLEMENTED = """
 ✅ 8. Async Streaming Pipeline
    - Chạy retrieval/RAG đồng bộ trong worker thread, stream kết quả qua asyncio queue
    - Giảm blocking trên event loop, cải thiện Time To First Token khi nhiều request đồng thời
+
+✅ 9. Semantic Cache (Cache-Augmented Generation)
+   - Lưu embedding + câu trả lời để trả kết quả tức thì cho câu hỏi tương tự
+   - Tự động invalidation khi upload/rebuild sources
+   - Giảm số lần gọi RAG/LLM cho các câu hỏi lặp lại
 """
 
 # ============================================================================

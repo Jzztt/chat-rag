@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.source import Source
 from app.core.workspace import get_default_workspace
+from app.core.semantic_cache import semantic_cache
 from app.services.rag_service import rag_service
 
 router = APIRouter(prefix="/sources", tags=["sources"])
@@ -125,6 +126,7 @@ async def rebuild_index(
             chroma_db_path=workspace.chroma_db_path,
             force_rebuild=force
         )
+        semantic_cache.clear(workspace.id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error rebuilding index: {str(e)}")
@@ -164,6 +166,7 @@ async def delete_source(
     # Delete from database (removes source attachment from conversation)
     db.delete(source)
     db.commit()
+    semantic_cache.clear(workspace.id)
     
     return {"message": "Source deleted successfully"}
 

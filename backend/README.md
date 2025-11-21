@@ -13,6 +13,7 @@ Backend API chuyên nghiệp cho hệ thống Chat RAG, được xây dựng v�
 - ✅ **Query Expansion** - Mở rộng câu hỏi với synonyms và related terms
 - ✅ **Parent-Child Chunking** - Chia tài liệu theo cấu trúc phân cấp
 - ✅ **Global Knowledge Base** - Một kho tài liệu dùng chung cho mọi cuộc trò chuyện
+- ✅ **Cache-Augmented Generation** - Semantic cache giảm số lần gọi RAG/LLM cho câu hỏi lặp
 - ✅ **Upload và Index Files** - Hỗ trợ PDF, DOCX, TXT, MD
 - ✅ **Source Management** - Quản lý nguồn tài liệu (giống NotebookLM)
 - ✅ **Database SQLite** với SQLAlchemy ORM

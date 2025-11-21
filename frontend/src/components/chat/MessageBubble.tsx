@@ -1,6 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card'
 import type { Message } from '@/types'
-import { User, Bot, Database, RefreshCw, Clock } from 'lucide-react'
+import { User, Bot, Database, RefreshCw, Clock, Zap } from 'lucide-react'
 
 interface MessageBubbleProps {
   message: Message
@@ -41,8 +41,26 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
           
           {/* Debug Info - Only show for assistant messages */}
-          {!isUser && (message.used_rag !== undefined || message.hops !== undefined || message.timing) && (
+          {!isUser && (message.used_rag !== undefined || message.hops !== undefined || message.timing || message.cache_hit) && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+              {message.cache_hit && (
+                <div
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900"
+                  title={
+                    message.cache_source === 'semantic'
+                      ? `Served from semantic cache${message.cache_similarity ? ` (similarity ${(message.cache_similarity * 100).toFixed(0)}%)` : ''}`
+                      : 'Served from exact cache'
+                  }
+                >
+                  <Zap className="h-3 w-3" />
+                  <span className="hidden sm:inline">
+                    {message.cache_source === 'semantic' ? 'Cache (semantic)' : 'Cache'}
+                  </span>
+                  {message.cache_source !== 'semantic' && (
+                    <span className="sm:hidden">Cache</span>
+                  )}
+                </div>
+              )}
               {message.used_rag !== undefined && (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50" title={message.used_rag ? 'Used RAG (Retrieval Augmented Generation)' : 'Direct answer (no RAG)'}>
                   <Database className="h-3 w-3" />

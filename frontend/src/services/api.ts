@@ -77,7 +77,10 @@ export const chatApi = {
                   eval_scores: jsonData.eval_scores || {},
                   used_rag: jsonData.used_rag !== undefined ? jsonData.used_rag : true,
                   hops: jsonData.hops || 1,
-                  timing: jsonData.timing || undefined
+                  timing: jsonData.timing || undefined,
+                  cache_hit: jsonData.cache_hit,
+                  cache_source: jsonData.cache_source,
+                  cache_similarity: jsonData.similarity
                 })
                 return
               } else if (jsonData.type === 'error') {

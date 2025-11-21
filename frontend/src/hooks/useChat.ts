@@ -47,6 +47,9 @@ export function useChat(conversationId: string | null) {
               lastMessage.used_rag = response.used_rag
               lastMessage.hops = response.hops
               lastMessage.timing = response.timing
+              lastMessage.cache_hit = response.cache_hit
+              lastMessage.cache_source = response.cache_source
+              lastMessage.cache_similarity = response.cache_similarity
             }
           }
           

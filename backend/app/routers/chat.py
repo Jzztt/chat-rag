@@ -9,8 +9,10 @@ import copy
 import json
 import threading
 import time
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.response_cache import response_cache, make_cache_key
+from app.core.semantic_cache import semantic_cache
 from app.core.workspace import get_default_workspace
 from app.models.conversation import Conversation, Message
 from app.services.rag_service import rag_service
@@ -72,6 +74,22 @@ async def send_message_stream(
     chroma_db_path = workspace.chroma_db_path
     cache_key = make_cache_key(request.question.strip() or request.question, workspace.id)
     cached_response = response_cache.get(cache_key)
+    semantic_embedding = None
+    semantic_cached_payload = None
+    
+    if settings.SEMANTIC_CACHE_ENABLED and not cached_response:
+        try:
+            semantic_embedding = rag_service.embed_query(
+                workspace_id=workspace.id,
+                chroma_db_path=chroma_db_path,
+                question=request.question
+            )
+            semantic_cached_payload = semantic_cache.lookup(
+                workspace_id=workspace.id,
+                embedding=semantic_embedding
+            )
+        except Exception as exc:
+            print(f"Warning: Semantic cache lookup failed: {exc}")
     
     # Save user message
     user_message = Message(
@@ -204,6 +222,87 @@ async def send_message_stream(
                 })}\n\n"
                 return
 
+            if semantic_cached_payload:
+                cached_payload = copy.deepcopy(semantic_cached_payload)
+                cached_timing = cached_payload.get("timing", {}) or {}
+                cached_timing.update({
+                    "cache_hit": True,
+                    "cache_source": cached_payload.get("cache_source", "semantic"),
+                    "total_ms": 0
+                })
+                full_answer = cached_payload.get("answer", "")
+                sources = cached_payload.get("sources", []) or []
+                confidence = cached_payload.get("confidence", "medium")
+                eval_scores = cached_payload.get("eval_scores", {}) or {}
+                used_rag_flag = cached_payload.get("used_rag", True)
+                hops = cached_payload.get("hops", 1)
+
+                message_metadata = {
+                    "used_rag": used_rag_flag,
+                    "hops": hops,
+                    "timing": cached_timing
+                }
+                sources_with_metadata = copy.deepcopy(sources) if sources else []
+                if sources_with_metadata:
+                    sources_with_metadata[0] = {**sources_with_metadata[0], **message_metadata}
+                else:
+                    sources_with_metadata = [message_metadata]
+
+                assistant_message = Message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=full_answer,
+                    sources=sources_with_metadata
+                )
+                db_session.add(assistant_message)
+
+                if is_first_message:
+                    try:
+                        conversation = db_session.query(Conversation).filter(
+                            Conversation.id == conversation_id
+                        ).first()
+                        
+                        if conversation:
+                            generated_title = rag_service.generate_conversation_title(
+                                workspace_id=workspace.id,
+                                chroma_db_path=chroma_db_path,
+                                first_message=request.question
+                            )
+                            conversation.title = generated_title
+                    except Exception as e:
+                        print(f"Warning: Failed to generate title from semantic cache: {e}")
+                        if not conversation:
+                            conversation = db_session.query(Conversation).filter(
+                                Conversation.id == conversation_id
+                            ).first()
+                        if conversation:
+                            conversation.title = request.question[:50] + "..." if len(request.question) > 50 else request.question
+
+                db_session.commit()
+
+                response_cache.set(cache_key, {
+                    "answer": full_answer,
+                    "sources": sources,
+                    "confidence": confidence,
+                    "eval_scores": eval_scores,
+                    "used_rag": used_rag_flag,
+                    "hops": hops,
+                    "timing": cached_timing
+                })
+
+                yield f"data: {json.dumps({
+                    'type': 'done',
+                    'answer': full_answer,
+                    'sources': sources,
+                    'conversation_id': conversation_id,
+                    'confidence': confidence,
+                    'eval_scores': eval_scores,
+                    'used_rag': used_rag_flag,
+                    'hops': hops,
+                    'timing': cached_timing
+                })}\n\n"
+                return
+
             # Stream RAG response with enhanced features (run sync pipeline in worker thread)
             rag_start_time = time.time()
             async for chunk_data in rag_stream():
@@ -298,6 +397,25 @@ async def send_message_stream(
                                 conversation.title = request.question[:50] + "..." if len(request.question) > 50 else request.question
                     
                     db_session.commit()
+                    
+                    if settings.SEMANTIC_CACHE_ENABLED and semantic_embedding is not None:
+                        try:
+                            semantic_cache.store(
+                                workspace_id=workspace.id,
+                                question=request.question,
+                                embedding=semantic_embedding,
+                                payload={
+                                    "answer": full_answer,
+                                    "sources": sources,
+                                    "confidence": confidence,
+                                    "eval_scores": eval_scores,
+                                    "used_rag": used_rag_flag,
+                                    "hops": hops,
+                                    "timing": timing_info
+                                }
+                            )
+                        except Exception as exc:
+                            print(f"Warning: Failed to store semantic cache entry: {exc}")
                     
                     response_cache.set(cache_key, {
                         "answer": full_answer,

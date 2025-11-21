@@ -8,6 +8,7 @@ import hashlib
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.workspace import get_default_workspace
+from app.core.semantic_cache import semantic_cache
 from app.models.source import Source
 from app.services.rag_service import rag_service
 
@@ -43,6 +44,7 @@ async def upload_files(
     
     uploaded_files = []
     errors = []
+    cache_needs_clear = False
     
     for file in files:
         try:
@@ -97,6 +99,7 @@ async def upload_files(
                     "filename": source.filename,
                     "status": "completed"
                 })
+                cache_needs_clear = True
             
             except Exception as e:
                 errors.append({
@@ -115,6 +118,9 @@ async def upload_files(
     
     # Note: RAG index is already rebuilt in index_file() method
     # No need to rebuild again here
+    
+    if cache_needs_clear:
+        semantic_cache.clear(workspace.id)
     
     return {
         "file_ids": [f["id"] for f in uploaded_files],

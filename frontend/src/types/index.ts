@@ -26,6 +26,9 @@ export interface ChatResponse {
     streaming_ms: number  // Streaming time
     total_s: number  // Total time in seconds
   }
+  cache_hit?: boolean
+  cache_source?: 'exact' | 'semantic' | string
+  cache_similarity?: number
 }
 
 export interface Source {
@@ -105,6 +108,9 @@ export interface Message {
     streaming_ms: number
     total_s: number
   }
+  cache_hit?: boolean
+  cache_source?: 'exact' | 'semantic' | string
+  cache_similarity?: number
 }
 
 export interface UploadResponse {

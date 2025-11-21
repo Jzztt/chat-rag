@@ -67,6 +67,16 @@ class RAGService:
         
         return self._instances[workspace_id]
     
+    def embed_query(
+        self,
+        workspace_id: str,
+        chroma_db_path: str,
+        question: str
+    ) -> list[float]:
+        """Return embedding vector for a query."""
+        rag = self.get_rag_system(workspace_id, chroma_db_path)
+        return rag.embeddings.embed_query(question)
+    
     def ask_question(
         self,
         workspace_id: str,

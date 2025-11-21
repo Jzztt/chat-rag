@@ -113,6 +113,11 @@ class Settings(BaseSettings):
     RESPONSE_CACHE_ENABLED: bool = True
     RESPONSE_CACHE_TTL: int = 300  # seconds
     RESPONSE_CACHE_MAX_ENTRIES: int = 200
+    SEMANTIC_CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_SIMILARITY: float = 0.85
+    SEMANTIC_CACHE_MAX_ENTRIES: int = 500
+    SEMANTIC_CACHE_LOOKUP_LIMIT: int = 200
+    SEMANTIC_CACHE_DB_PATH: Path = Path("./semantic_cache.db")
     
     # Logging
     LOG_DIR: Path = Path("./logs")
@@ -129,4 +134,5 @@ settings.CHROMA_DB_BASE_PATH.mkdir(parents=True, exist_ok=True)
 settings.GLOBAL_CHROMA_DB_PATH.mkdir(parents=True, exist_ok=True)
 settings.GLOBAL_PDFS_DIR.mkdir(parents=True, exist_ok=True)
 settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
+settings.SEMANTIC_CACHE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
